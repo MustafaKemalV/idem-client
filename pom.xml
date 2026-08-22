@@ -69,5 +69,13 @@
             <artifactId>spring-boot-starter-webflux</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Mock downstream HTTP server for end-to-end adversarial tests.
+             standalone bundles a shaded Jetty, isolated from Spring Boot 4.1's Jetty 12. -->
+        <dependency>
+            <groupId>org.wiremock</groupId>
+            <artifactId>wiremock-standalone</artifactId>
+            <version>3.13.2</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 </project>
