@@ -31,6 +31,11 @@ public final class IdempotencyKeyExchangeFilter implements ExchangeFilterFunctio
         this(DEFAULT_HEADER_NAME);
     }
 
+    /** @return the header name this filter writes the idempotency key to. */
+    public String headerName() {
+        return headerName;
+    }
+
     @Override
     public Mono<ClientResponse> filter(ClientRequest request, ExchangeFunction next) {
         return Mono.deferContextual(context -> {
