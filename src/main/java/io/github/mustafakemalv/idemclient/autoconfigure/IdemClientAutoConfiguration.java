@@ -10,7 +10,9 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.util.retry.Retry;
 
 /**
@@ -35,7 +37,10 @@ public class IdemClientAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     IdempotentExecutor idempotentExecutor(IdempotencyKeyGenerator keyGenerator, IdempotencyProperties properties) {
-        Retry retrySpec = Retry.backoff(properties.getMaxAttempts(), properties.getMinBackoff());
+        validate(properties);
+        Retry retrySpec = Retry.backoff(properties.getMaxAttempts(), properties.getMinBackoff())
+                .maxBackoff(properties.getMaxBackoff())
+                .filter(IdemClientAutoConfiguration::isRetryable);
         return new IdempotentExecutor(keyGenerator, retrySpec);
     }
 
@@ -43,5 +48,31 @@ public class IdemClientAutoConfiguration {
     @ConditionalOnMissingBean
     IdempotencyKeyExchangeFilter idempotencyKeyExchangeFilter(IdempotencyProperties properties) {
         return new IdempotencyKeyExchangeFilter(properties.getHeaderName());
+    }
+
+    /**
+     * Retries transient failures only: HTTP 5xx and 429 (Too Many Requests), plus non-HTTP-response
+     * errors (typically transport failures like a connection reset or timeout, exactly the ambiguous
+     * "did my request arrive?" case a stable idempotency key protects). Deterministic HTTP 4xx
+     * (400/401/403/404/422, ...) are NOT retried, since a retry cannot fix them.
+     */
+    public static boolean isRetryable(Throwable error) {
+        if (error instanceof WebClientResponseException responseException) {
+            HttpStatusCode status = responseException.getStatusCode();
+            return status.is5xxServerError() || status.value() == 429;
+        }
+        return true;
+    }
+
+    private static void validate(IdempotencyProperties properties) {
+        if (properties.getMaxAttempts() < 0) {
+            throw new IllegalStateException("idem-client.max-attempts must be >= 0");
+        }
+        if (properties.getMinBackoff().isNegative() || properties.getMaxBackoff().isNegative()) {
+            throw new IllegalStateException("idem-client.min-backoff and max-backoff must not be negative");
+        }
+        if (properties.getMaxBackoff().compareTo(properties.getMinBackoff()) < 0) {
+            throw new IllegalStateException("idem-client.max-backoff must be >= min-backoff");
+        }
     }
 }

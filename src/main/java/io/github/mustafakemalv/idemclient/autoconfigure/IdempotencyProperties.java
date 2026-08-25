@@ -20,6 +20,9 @@ public class IdempotencyProperties {
     /** Minimum (exponential) backoff between retry attempts. */
     private Duration minBackoff = Duration.ofMillis(100);
 
+    /** Maximum (exponential) backoff between retry attempts. */
+    private Duration maxBackoff = Duration.ofSeconds(2);
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -50,5 +53,13 @@ public class IdempotencyProperties {
 
     public void setMinBackoff(Duration minBackoff) {
         this.minBackoff = minBackoff;
+    }
+
+    public Duration getMaxBackoff() {
+        return maxBackoff;
+    }
+
+    public void setMaxBackoff(Duration maxBackoff) {
+        this.maxBackoff = maxBackoff;
     }
 }

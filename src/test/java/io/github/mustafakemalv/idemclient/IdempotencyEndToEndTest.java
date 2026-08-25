@@ -12,9 +12,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
 import com.github.tomakehurst.wiremock.junit5.WireMockTest;
+import io.github.mustafakemalv.idemclient.autoconfigure.IdemClientAutoConfiguration;
 import io.github.mustafakemalv.idemclient.core.IdempotentExecutor;
 import io.github.mustafakemalv.idemclient.core.UuidIdempotencyKeyGenerator;
 import io.github.mustafakemalv.idemclient.web.IdempotencyKeyExchangeFilter;
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -93,5 +95,27 @@ class IdempotencyEndToEndTest {
         String key = sentKeys().get(0);
         assertThat(key).isNotNull();
         assertThat(UUID.fromString(key)).hasToString(key); // a well-formed UUID was generated
+    }
+
+    @Test
+    void doesNotRetryClientErrors(WireMockRuntimeInfo wm) {
+        stubFor(post(urlEqualTo("/charge")).willReturn(aResponse().withStatus(400)));
+        IdempotentExecutor exec = new IdempotentExecutor(new UuidIdempotencyKeyGenerator(),
+                Retry.backoff(3, Duration.ofMillis(1)).filter(IdemClientAutoConfiguration::isRetryable));
+
+        StepVerifier.create(exec.execute(charge(clientFor(wm)))).expectError().verify();
+
+        verify(1, postRequestedFor(urlEqualTo("/charge"))); // 4xx: no retry
+    }
+
+    @Test
+    void retriesServerErrors(WireMockRuntimeInfo wm) {
+        stubFor(post(urlEqualTo("/charge")).willReturn(aResponse().withStatus(503)));
+        IdempotentExecutor exec = new IdempotentExecutor(new UuidIdempotencyKeyGenerator(),
+                Retry.backoff(3, Duration.ofMillis(1)).filter(IdemClientAutoConfiguration::isRetryable));
+
+        StepVerifier.create(exec.execute(charge(clientFor(wm)))).expectError().verify();
+
+        verify(4, postRequestedFor(urlEqualTo("/charge"))); // 5xx: 1 + 3 retries
     }
 }

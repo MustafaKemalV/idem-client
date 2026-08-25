@@ -49,6 +49,17 @@ class IdemClientAutoConfigurationTest {
         });
     }
 
+    @Test
+    void failsFastOnInvalidConfig() {
+        runner.withPropertyValues("idem-client.max-attempts=-1").run(context ->
+                assertThat(context).hasFailed());
+    }
+
+    @Test
+    void retryPredicateRetriesTransportErrors() {
+        assertThat(IdemClientAutoConfiguration.isRetryable(new RuntimeException("connection reset"))).isTrue();
+    }
+
     @Configuration
     static class CustomGeneratorConfig {
         @Bean
