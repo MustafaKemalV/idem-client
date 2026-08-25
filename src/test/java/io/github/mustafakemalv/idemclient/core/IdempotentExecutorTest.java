@@ -53,6 +53,22 @@ class IdempotentExecutorTest {
     }
 
     @Test
+    void freshKeyPerSubscription() {
+        List<String> keys = new CopyOnWriteArrayList<>();
+        Mono<String> capturesKey = Mono.deferContextual(ctx -> {
+            IdempotencyContext.keyFrom(ctx).ifPresent(keys::add);
+            return Mono.just("ok");
+        });
+        Mono<String> executed = executor.execute(capturesKey); // built ONCE
+
+        StepVerifier.create(executed).expectNext("ok").verifyComplete();
+        StepVerifier.create(executed).expectNext("ok").verifyComplete();
+
+        assertThat(keys).hasSize(2);
+        assertThat(new HashSet<>(keys)).hasSize(2); // two subscriptions => two different keys
+    }
+
+    @Test
     void callerSuppliedKeyIsUsed() {
         List<String> keys = new CopyOnWriteArrayList<>();
         Mono<String> capturesKey = Mono.deferContextual(ctx -> {

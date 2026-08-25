@@ -24,9 +24,16 @@ public final class IdempotentExecutor {
         this.retrySpec = Objects.requireNonNull(retrySpec, "retrySpec");
     }
 
-    /** Runs {@code operation} with a freshly generated idempotency key for this logical operation. */
+    /**
+     * Runs {@code operation} with a freshly generated idempotency key for this logical operation.
+     *
+     * <p>The key is generated per SUBSCRIPTION (not at assembly time), so subscribing to the returned
+     * {@code Mono} more than once (a fan-out) yields a DIFFERENT key each time, while a retry of one
+     * subscription keeps the SAME key.
+     */
     public <T> Mono<T> execute(Mono<T> operation) {
-        return execute(keyGenerator.newKey(), operation);
+        Objects.requireNonNull(operation, "operation");
+        return Mono.defer(() -> execute(keyGenerator.newKey(), operation));
     }
 
     /** Runs {@code operation} with the caller-supplied idempotency key. */
