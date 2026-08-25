@@ -113,6 +113,15 @@ through the `IdempotentExecutor`:
 | `idem-client.min-backoff` | `100ms` | Minimum exponential backoff between retries. |
 | `idem-client.max-backoff` | `2s` | Maximum exponential backoff between retries. |
 
+## Retry behavior
+
+The auto-configured `IdempotentExecutor` retries transient failures only (HTTP 5xx and 429, and
+transport errors such as a connection reset or timeout), up to `max-attempts`, with exponential
+backoff and jitter capped at `max-backoff`. Deterministic 4xx errors are not retried. When retries
+are exhausted the original error is propagated (not wrapped in a `RetryExhaustedException`). To change
+any of this, define your own `IdempotentExecutor` (or `Retry`) bean; every auto-configured bean backs
+off when you provide your own.
+
 ## How it works
 
 See [docs/how-it-works.md](docs/how-it-works.md) for the Reactor Context mechanics and why the key

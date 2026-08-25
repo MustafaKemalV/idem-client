@@ -41,7 +41,8 @@ public class IdemClientAutoConfiguration {
         validate(properties);
         Retry retrySpec = Retry.backoff(properties.getMaxAttempts(), properties.getMinBackoff())
                 .maxBackoff(properties.getMaxBackoff())
-                .filter(IdemClientAutoConfiguration::isRetryable);
+                .filter(IdemClientAutoConfiguration::isRetryable)
+                .onRetryExhaustedThrow((spec, signal) -> signal.failure());
         return new IdempotentExecutor(keyGenerator, retrySpec);
     }
 

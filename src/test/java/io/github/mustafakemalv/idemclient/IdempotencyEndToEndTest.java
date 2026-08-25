@@ -24,6 +24,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 import reactor.util.retry.Retry;
@@ -114,9 +115,11 @@ class IdempotencyEndToEndTest {
     void retriesServerErrors(WireMockRuntimeInfo wm) {
         stubFor(post(urlEqualTo("/charge")).willReturn(aResponse().withStatus(503)));
         IdempotentExecutor exec = new IdempotentExecutor(new UuidIdempotencyKeyGenerator(),
-                Retry.backoff(3, Duration.ofMillis(1)).filter(IdemClientAutoConfiguration::isRetryable));
+                Retry.backoff(3, Duration.ofMillis(1)).filter(IdemClientAutoConfiguration::isRetryable)
+                        .onRetryExhaustedThrow((spec, signal) -> signal.failure()));
 
-        StepVerifier.create(exec.execute(charge(clientFor(wm)))).expectError().verify();
+        StepVerifier.create(exec.execute(charge(clientFor(wm))))
+                .expectError(WebClientResponseException.class).verify(); // original error, not RetryExhausted
 
         verify(4, postRequestedFor(urlEqualTo("/charge"))); // 5xx: 1 + 3 retries
     }
