@@ -1,6 +1,7 @@
 package io.github.mustafakemalv.idemclient.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.mustafakemalv.idemclient.core.IdempotencyContext;
 import java.net.URI;
@@ -62,5 +63,28 @@ class IdempotencyKeyExchangeFilterTest {
 
         StepVerifier.create(result).expectNextCount(1).verifyComplete();
         assertThat(captured.get().headers().getFirst("Idempotency-Key")).isEqualTo("caller-set");
+    }
+
+    @Test
+    void rejectsKeyWithControlCharacters() {
+        AtomicReference<ClientRequest> captured = new AtomicReference<>();
+
+        Mono<ClientResponse> result = filter.filter(newRequest(), capturingInto(captured))
+                .contextWrite(ctx -> IdempotencyContext.withKey(ctx, "bad\r\nX-Evil: 1"));
+
+        StepVerifier.create(result).expectError(IllegalArgumentException.class).verify();
+        assertThat(captured.get()).isNull(); // request never dispatched
+    }
+
+    @Test
+    void rejectsBlankHeaderName() {
+        assertThatThrownBy(() -> new IdempotencyKeyExchangeFilter("  "))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsNullHeaderName() {
+        assertThatThrownBy(() -> new IdempotencyKeyExchangeFilter(null))
+                .isInstanceOf(NullPointerException.class);
     }
 }
