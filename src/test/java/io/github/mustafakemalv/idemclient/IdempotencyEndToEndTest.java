@@ -16,6 +16,8 @@ import io.github.mustafakemalv.idemclient.autoconfigure.IdemClientAutoConfigurat
 import io.github.mustafakemalv.idemclient.core.IdempotentExecutor;
 import io.github.mustafakemalv.idemclient.core.UuidIdempotencyKeyGenerator;
 import io.github.mustafakemalv.idemclient.web.IdempotencyKeyExchangeFilter;
+import io.github.mustafakemalv.idemclient.web.IdempotentWebClient;
+import io.github.mustafakemalv.idemclient.web.IdempotentWebClientFactory;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
@@ -117,5 +119,22 @@ class IdempotencyEndToEndTest {
         StepVerifier.create(exec.execute(charge(clientFor(wm)))).expectError().verify();
 
         verify(4, postRequestedFor(urlEqualTo("/charge"))); // 5xx: 1 + 3 retries
+    }
+
+    @Test
+    void factoryWrappedClientSendsKeyWithoutManualFilter(WireMockRuntimeInfo wm) {
+        stubFor(post(urlEqualTo("/charge")).willReturn(aResponse().withStatus(200).withBody("ok")));
+        IdempotentWebClientFactory factory = new IdempotentWebClientFactory(
+                new IdempotentExecutor(new UuidIdempotencyKeyGenerator(), Retry.max(1)),
+                new IdempotencyKeyExchangeFilter());
+        // the builder has NO .filter(...) call; the factory attaches it for us
+        IdempotentWebClient client = factory.create(WebClient.builder().baseUrl(wm.getHttpBaseUrl()));
+
+        StepVerifier.create(client.execute(wc ->
+                        wc.post().uri("/charge").retrieve().bodyToMono(String.class)))
+                .expectNext("ok").verifyComplete();
+
+        String key = sentKeys().get(0);
+        assertThat(UUID.fromString(key)).hasToString(key); // key sent even without a manual filter
     }
 }

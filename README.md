@@ -23,8 +23,11 @@ thread-hop.
 
 - **Stable key across retries:** the key lives in the Reactor Context, so every retry attempt of one
   logical operation carries the same `Idempotency-Key`.
-- **Per-operation keys:** a fresh key per `execute(...)` call; a new logical operation gets a new key.
+- **Per-operation keys:** a fresh key per subscription; a new logical operation gets a new key.
 - **Bring your own key or scheme:** pass an explicit key, or plug in your own `IdempotencyKeyGenerator`.
+- **Footgun-free wrapper:** `IdempotentWebClient` attaches the filter for you, so a call cannot
+  silently go out without the key.
+- **Transient-only retries:** retries 5xx/429 and transport errors, not deterministic 4xx.
 - **Spring Boot starter:** auto-configured beans, tunable via `idem-client.*` properties.
 - **Reactive-first:** built on `WebClient` and Project Reactor.
 
@@ -51,34 +54,54 @@ Then add the dependency:
 
 ## Usage
 
-The starter auto-configures an `IdempotentExecutor` and an `IdempotencyKeyExchangeFilter`. Add the
-filter to the `WebClient` you use for the idempotent downstream, then run each call through the
-executor:
+### Recommended: `IdempotentWebClient` (the filter cannot be forgotten)
+
+The starter auto-configures an `IdempotentWebClientFactory`. Hand it your own `WebClient.Builder`
+(base URL, auth, codecs, whatever you need); it attaches the idempotency filter and pairs it with the
+executor, so every call sends a stable `Idempotency-Key`:
+
+    @Configuration
+    class PaymentConfig {
+        @Bean
+        IdempotentWebClient paymentClient(IdempotentWebClientFactory factory) {
+            return factory.create(WebClient.builder().baseUrl("https://payments.example.com"));
+        }
+    }
 
     @Service
-    class PaymentClient {
+    class PaymentService {
+        private final IdempotentWebClient client;
 
-        private final WebClient webClient;
-        private final IdempotentExecutor idempotency;
-
-        PaymentClient(IdempotencyKeyExchangeFilter idempotencyFilter, IdempotentExecutor idempotency) {
-            this.webClient = WebClient.builder()
-                    .baseUrl("https://payments.example.com")
-                    .filter(idempotencyFilter)
-                    .build();
-            this.idempotency = idempotency;
+        PaymentService(IdempotentWebClient client) {
+            this.client = client;
         }
 
         Mono<Receipt> charge(ChargeRequest request) {
-            return idempotency.execute(
-                    webClient.post().uri("/charge").bodyValue(request)
-                            .retrieve().bodyToMono(Receipt.class));
+            return client.execute(wc -> wc.post().uri("/charge").bodyValue(request)
+                    .retrieve().bodyToMono(Receipt.class));
         }
     }
 
 - **Same operation, retried:** every attempt sends the same `Idempotency-Key`.
 - **A new `charge(...)` call:** a new key, a distinct operation to the downstream.
-- **Your own key:** `idempotency.execute("order-42", ...)` uses the key you supply.
+- **Your own key:** `client.execute("order-42", wc -> ...)` uses the key you supply.
+
+### Low-level: `IdempotentExecutor` + filter (wire it yourself)
+
+If you manage the `WebClient` yourself, add the `IdempotencyKeyExchangeFilter` to it and route calls
+through the `IdempotentExecutor`:
+
+    WebClient webClient = WebClient.builder()
+            .baseUrl("https://payments.example.com")
+            .filter(idempotencyFilter) // REQUIRED: without this filter, no key is sent
+            .build();
+
+    Mono<Receipt> receipt = idempotentExecutor.execute(
+            webClient.post().uri("/charge").bodyValue(request).retrieve().bodyToMono(Receipt.class));
+
+> **Warning:** on the low-level path you MUST add the filter to the WebClient. If you wrap a call in
+> `execute(...)` but forget the filter, the call still runs and retries but sends no `Idempotency-Key`
+> header, so you get no protection. Prefer `IdempotentWebClient` above, which attaches it for you.
 
 ## Configuration
 
@@ -88,6 +111,7 @@ executor:
 | `idem-client.header-name` | `Idempotency-Key` | Header the key is written to. |
 | `idem-client.max-attempts` | `3` | Retry attempts, in addition to the initial call. |
 | `idem-client.min-backoff` | `100ms` | Minimum exponential backoff between retries. |
+| `idem-client.max-backoff` | `2s` | Maximum exponential backoff between retries. |
 
 ## How it works
 
@@ -100,8 +124,8 @@ survives a retry.
   idempotency.
 - **The downstream must honor the header.** If it ignores `Idempotency-Key`, there is no protection.
 - **Reactive only.** v1 targets `WebClient`; there is no blocking (RestTemplate/Feign) variant.
-- **Key scope is the `execute(...)` call.** Reusing the returned `Mono` reuses the same key (same
-  logical operation); a new operation means a new `execute(...)`.
+- **Key scope is one subscription.** Each subscription of a returned `Mono` gets its own key; a retry
+  of that subscription keeps the same key. An explicit key must be unique per logical operation.
 
 ## License
 

@@ -4,6 +4,7 @@ import io.github.mustafakemalv.idemclient.core.IdempotencyKeyGenerator;
 import io.github.mustafakemalv.idemclient.core.IdempotentExecutor;
 import io.github.mustafakemalv.idemclient.core.UuidIdempotencyKeyGenerator;
 import io.github.mustafakemalv.idemclient.web.IdempotencyKeyExchangeFilter;
+import io.github.mustafakemalv.idemclient.web.IdempotentWebClientFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -48,6 +49,13 @@ public class IdemClientAutoConfiguration {
     @ConditionalOnMissingBean
     IdempotencyKeyExchangeFilter idempotencyKeyExchangeFilter(IdempotencyProperties properties) {
         return new IdempotencyKeyExchangeFilter(properties.getHeaderName());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    IdempotentWebClientFactory idempotentWebClientFactory(
+            IdempotentExecutor executor, IdempotencyKeyExchangeFilter filter) {
+        return new IdempotentWebClientFactory(executor, filter);
     }
 
     /**

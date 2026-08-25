@@ -30,6 +30,9 @@ public final class IdempotentExecutor {
      * <p>The key is generated per SUBSCRIPTION (not at assembly time), so subscribing to the returned
      * {@code Mono} more than once (a fan-out) yields a DIFFERENT key each time, while a retry of one
      * subscription keeps the SAME key.
+     *
+     * <p>Note: the key only reaches the wire when the idempotency exchange filter is attached to the
+     * {@code WebClient}. Prefer the higher-level {@code IdempotentWebClient}, which attaches it for you.
      */
     public <T> Mono<T> execute(Mono<T> operation) {
         Objects.requireNonNull(operation, "operation");
