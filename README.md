@@ -212,6 +212,20 @@ That way a replay after a crash reuses the same key and the downstream deduplica
 cross-process durability (a persisted key + response store) is intentionally out of scope for this
 transport-only library.
 
+## Roadmap: caller-side idempotency store (design preview)
+
+Today idem-client keeps a key stable across retries and delegates deduplication to the downstream. A
+natural next direction is a caller-side store so a repeated logical operation (double-submit, queue
+replay, restart) can short-circuit locally instead of re-issuing the side effect. The
+`IdempotencyStore` SPI sketches the shape (in-flight / completed / failed, single-flight via `begin`),
+so a durable backend (Redis, JDBC) could plug in without breaking the core API.
+
+It is a design preview, not wired into the execution path in this release, and deliberately so: a
+store only helps with a stable/deterministic key (not the random-UUID default), and even a durable
+store cannot deliver exactly-once (the "committed downstream but not yet persisted here" crash window
+is not closable on the caller side). Shipping the SPI without over-claiming keeps the library honest
+and lean while marking the intended evolution.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
