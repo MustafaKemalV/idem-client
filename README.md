@@ -147,6 +147,19 @@ tracing, the key lives in the Reactor Context: enable Reactor's automatic contex
 (`Hooks.enableAutomaticContextPropagation()`) and read the key from the Context to add it as a span
 tag, rather than from a ThreadLocal-backed MDC, which the reactive thread-hop would lose.
 
+## Guarding against key reuse
+
+Reusing an idempotency key with a DIFFERENT request is a classic bug (providers like Stripe reject it
+with a 400). Pass a fingerprint of the request alongside an explicit key, and the library fails fast,
+locally, before sending, if the same key is later used with a different fingerprint:
+
+    client.execute(orderId, fingerprintOf(request),
+            wc -> wc.post().uri("/charge").bodyValue(request).retrieve().bodyToMono(Receipt.class));
+
+You compute the fingerprint (for example a hash of the body and amount); the library does not buffer
+the reactive body. The guard is an in-memory, bounded, per-process LRU, so it catches a local mistake,
+not a cross-process conflict.
+
 ## How it works
 
 See [docs/how-it-works.md](docs/how-it-works.md) for the Reactor Context mechanics and why the key

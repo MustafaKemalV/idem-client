@@ -3,6 +3,7 @@ package io.github.mustafakemalv.idemclient.autoconfigure;
 import io.github.mustafakemalv.idemclient.core.IdempotencyKeyGenerator;
 import io.github.mustafakemalv.idemclient.core.IdempotencyListener;
 import io.github.mustafakemalv.idemclient.core.IdempotentExecutor;
+import io.github.mustafakemalv.idemclient.core.KeyFingerprintGuard;
 import io.github.mustafakemalv.idemclient.core.UuidIdempotencyKeyGenerator;
 import io.github.mustafakemalv.idemclient.web.IdempotencyKeyExchangeFilter;
 import io.github.mustafakemalv.idemclient.web.IdempotentWebClientFactory;
@@ -66,9 +67,15 @@ public class IdemClientAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    KeyFingerprintGuard keyFingerprintGuard() {
+        return new KeyFingerprintGuard(10_000);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     IdempotentWebClientFactory idempotentWebClientFactory(
-            IdempotentExecutor executor, IdempotencyKeyExchangeFilter filter) {
-        return new IdempotentWebClientFactory(executor, filter);
+            IdempotentExecutor executor, IdempotencyKeyExchangeFilter filter, KeyFingerprintGuard guard) {
+        return new IdempotentWebClientFactory(executor, filter, guard);
     }
 
     /**

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.mustafakemalv.idemclient.core.IdempotencyKeyGenerator;
 import io.github.mustafakemalv.idemclient.core.IdempotencyListener;
 import io.github.mustafakemalv.idemclient.core.IdempotentExecutor;
+import io.github.mustafakemalv.idemclient.core.KeyFingerprintGuard;
 import io.github.mustafakemalv.idemclient.web.IdempotencyKeyExchangeFilter;
 import io.github.mustafakemalv.idemclient.web.IdempotentWebClientFactory;
 import org.junit.jupiter.api.Test;
@@ -26,6 +27,7 @@ class IdemClientAutoConfigurationTest {
             assertThat(context).hasSingleBean(IdempotencyKeyExchangeFilter.class);
             assertThat(context).hasSingleBean(IdempotentWebClientFactory.class);
             assertThat(context).hasSingleBean(IdempotencyListener.class);
+            assertThat(context).hasSingleBean(KeyFingerprintGuard.class);
         });
     }
 

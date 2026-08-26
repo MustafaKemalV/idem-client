@@ -15,8 +15,10 @@ import com.github.tomakehurst.wiremock.http.Fault;
 import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
 import com.github.tomakehurst.wiremock.junit5.WireMockTest;
 import io.github.mustafakemalv.idemclient.autoconfigure.IdemClientAutoConfiguration;
+import io.github.mustafakemalv.idemclient.core.IdempotencyKeyConflictException;
 import io.github.mustafakemalv.idemclient.core.IdempotencyListener;
 import io.github.mustafakemalv.idemclient.core.IdempotentExecutor;
+import io.github.mustafakemalv.idemclient.core.KeyFingerprintGuard;
 import io.github.mustafakemalv.idemclient.core.UuidIdempotencyKeyGenerator;
 import io.github.mustafakemalv.idemclient.web.IdempotencyKeyExchangeFilter;
 import io.github.mustafakemalv.idemclient.web.IdempotentWebClient;
@@ -209,5 +211,28 @@ class IdempotencyEndToEndTest {
                 .expectNext("ok").verifyComplete();
 
         verify(postRequestedFor(urlEqualTo("/charge")).withHeader("X-Custom-Idem", matching(".+")));
+    }
+
+    @Test
+    void rejectsSameKeyWithDifferentFingerprint(WireMockRuntimeInfo wm) {
+        stubFor(post(urlEqualTo("/charge")).willReturn(aResponse().withStatus(200).withBody("ok")));
+        IdempotentWebClientFactory factory = new IdempotentWebClientFactory(
+                new IdempotentExecutor(new UuidIdempotencyKeyGenerator(), Retry.max(1)),
+                new IdempotencyKeyExchangeFilter(),
+                new KeyFingerprintGuard(100));
+        IdempotentWebClient client = factory.create(WebClient.builder().baseUrl(wm.getHttpBaseUrl()));
+
+        // same key + same fingerprint: allowed, sent twice
+        StepVerifier.create(client.execute("order-1", "fp-A",
+                        wc -> wc.post().uri("/charge").retrieve().bodyToMono(String.class)))
+                .expectNext("ok").verifyComplete();
+        StepVerifier.create(client.execute("order-1", "fp-A",
+                        wc -> wc.post().uri("/charge").retrieve().bodyToMono(String.class)))
+                .expectNext("ok").verifyComplete();
+
+        // same key + different fingerprint: rejected before sending
+        StepVerifier.create(client.execute("order-1", "fp-B",
+                        wc -> wc.post().uri("/charge").retrieve().bodyToMono(String.class)))
+                .expectError(IdempotencyKeyConflictException.class).verify();
     }
 }
