@@ -129,6 +129,22 @@ off when you provide your own.
 Set `per-attempt-timeout` (and your WebClient's `responseTimeout`) to bound a slow downstream: a
 timed-out attempt is retried safely precisely because the key stays stable.
 
+The default backoff does not read the failing response, so it ignores a `Retry-After` header on 429/503.
+To honor it, override the `IdempotentExecutor` bean with a custom `Retry` that reads the header
+(`IdemClientAutoConfiguration.isRetryable(...)` is public, so you can reuse the transient-only policy):
+
+    Retry retry = Retry.from(signals -> signals.flatMap(rs -> {
+        if (rs.totalRetries() >= 3 || !IdemClientAutoConfiguration.isRetryable(rs.failure())) {
+            return Mono.error(rs.failure());
+        }
+        String retryAfter = rs.failure() instanceof WebClientResponseException e
+                ? e.getHeaders().getFirst("Retry-After") : null;
+        Duration delay = retryAfter != null
+                ? Duration.ofSeconds(Long.parseLong(retryAfter.trim()))
+                : Duration.ofMillis(200);
+        return Mono.delay(delay).thenReturn(rs.totalRetries());
+    }));
+
 ## Observability
 
 The library requires no observability dependency. Implement `IdempotencyListener` as a bean to feed
