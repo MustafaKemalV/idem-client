@@ -140,6 +140,24 @@ survives a retry.
 - **Key scope is one subscription.** Each subscription of a returned `Mono` gets its own key; a retry
   of that subscription keeps the same key. An explicit key must be unique per logical operation.
 
+## Durability boundary
+
+The generated key lives only for the life of one reactive subscription (it is minted in `Mono.defer`
+and stored in the subscription-scoped Reactor Context). It does NOT survive a process restart or a new
+subscription: if the JVM crashes after a request is dispatched but before the response is processed, and
+the operation is later re-driven (a new subscription, or an outbox/queue replay), a brand-new key is
+generated and the downstream sees a different logical operation, so it can double-process.
+
+For at-least-once redelivery (crash-safe retries across restarts or pods), do not rely on a generated
+key. Derive a stable business key from the operation itself (for example `order-42`, or a hash of the
+business identity), persist it alongside the operation, and pass it explicitly:
+
+    idempotency.execute("order-42", wc -> wc.post().uri("/charge")...);
+
+That way a replay after a crash reuses the same key and the downstream deduplicates it. Genuine
+cross-process durability (a persisted key + response store) is intentionally out of scope for this
+transport-only library.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
