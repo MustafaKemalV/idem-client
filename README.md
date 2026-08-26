@@ -86,6 +86,9 @@ executor, so every call sends a stable `Idempotency-Key`:
 - **A new `charge(...)` call:** a new key, a distinct operation to the downstream.
 - **Your own key:** `client.execute("order-42", wc -> ...)` uses the key you supply.
 
+For multiple downstreams with different header names or retry policies, pass a provider-specific
+filter or executor: `factory.create(builder, new IdempotencyKeyExchangeFilter("X-Idem"))`.
+
 ### Low-level: `IdempotentExecutor` + filter (wire it yourself)
 
 If you manage the `WebClient` yourself, add the `IdempotencyKeyExchangeFilter` to it and route calls

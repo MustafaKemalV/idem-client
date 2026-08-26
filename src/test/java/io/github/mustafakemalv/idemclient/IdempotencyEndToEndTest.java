@@ -2,6 +2,7 @@ package io.github.mustafakemalv.idemclient;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.findAll;
+import static com.github.tomakehurst.wiremock.client.WireMock.matching;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.stubFor;
@@ -191,5 +192,22 @@ class IdempotencyEndToEndTest {
 
         assertThat(retries.get()).isEqualTo(2);   // two retries before exhaustion
         assertThat(exhausted.get()).isEqualTo(1); // exhausted once
+    }
+
+    @Test
+    void perProviderCustomHeaderName(WireMockRuntimeInfo wm) {
+        stubFor(post(urlEqualTo("/charge")).willReturn(aResponse().withStatus(200).withBody("ok")));
+        IdempotentWebClientFactory factory = new IdempotentWebClientFactory(
+                new IdempotentExecutor(new UuidIdempotencyKeyGenerator(), Retry.max(1)),
+                new IdempotencyKeyExchangeFilter());
+        IdempotentWebClient client = factory.create(
+                WebClient.builder().baseUrl(wm.getHttpBaseUrl()),
+                new IdempotencyKeyExchangeFilter("X-Custom-Idem")); // provider-specific header
+
+        StepVerifier.create(client.execute(wc ->
+                        wc.post().uri("/charge").retrieve().bodyToMono(String.class)))
+                .expectNext("ok").verifyComplete();
+
+        verify(postRequestedFor(urlEqualTo("/charge")).withHeader("X-Custom-Idem", matching(".+")));
     }
 }
