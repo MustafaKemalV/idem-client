@@ -10,6 +10,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.verify;
 import static com.github.tomakehurst.wiremock.stubbing.Scenario.STARTED;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.github.tomakehurst.wiremock.http.Fault;
 import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
 import com.github.tomakehurst.wiremock.junit5.WireMockTest;
 import io.github.mustafakemalv.idemclient.autoconfigure.IdemClientAutoConfiguration;
@@ -139,5 +140,23 @@ class IdempotencyEndToEndTest {
 
         String key = sentKeys().get(0);
         assertThat(UUID.fromString(key)).hasToString(key); // key sent even without a manual filter
+    }
+
+    @Test
+    void retryAfterConnectionResetReusesSameKey(WireMockRuntimeInfo wm) {
+        stubFor(post(urlEqualTo("/charge")).inScenario("reset")
+                .whenScenarioStateIs(STARTED)
+                .willReturn(aResponse().withFault(Fault.CONNECTION_RESET_BY_PEER))
+                .willSetStateTo("second"));
+        stubFor(post(urlEqualTo("/charge")).inScenario("reset")
+                .whenScenarioStateIs("second")
+                .willReturn(aResponse().withStatus(200).withBody("ok")));
+        IdempotentExecutor exec = new IdempotentExecutor(new UuidIdempotencyKeyGenerator(),
+                Retry.backoff(3, Duration.ofMillis(1)).filter(IdemClientAutoConfiguration::isRetryable));
+
+        StepVerifier.create(exec.execute(charge(clientFor(wm)))).expectNext("ok").verifyComplete();
+
+        verify(2, postRequestedFor(urlEqualTo("/charge")));
+        assertThat(sentKeys().stream().distinct().count()).isEqualTo(1L); // same key across a REAL socket reset
     }
 }
