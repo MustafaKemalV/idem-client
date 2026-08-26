@@ -43,7 +43,7 @@ public class IdemClientAutoConfiguration {
                 .maxBackoff(properties.getMaxBackoff())
                 .filter(IdemClientAutoConfiguration::isRetryable)
                 .onRetryExhaustedThrow((spec, signal) -> signal.failure());
-        return new IdempotentExecutor(keyGenerator, retrySpec);
+        return new IdempotentExecutor(keyGenerator, retrySpec, properties.getPerAttemptTimeout());
     }
 
     @Bean

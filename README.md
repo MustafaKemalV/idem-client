@@ -112,6 +112,7 @@ through the `IdempotentExecutor`:
 | `idem-client.max-attempts` | `3` | Retry attempts, in addition to the initial call. |
 | `idem-client.min-backoff` | `100ms` | Minimum exponential backoff between retries. |
 | `idem-client.max-backoff` | `2s` | Maximum exponential backoff between retries. |
+| `idem-client.per-attempt-timeout` | (unset) | Per-attempt timeout; a timed-out attempt is retried as a transport error. Unset = no timeout. |
 
 ## Retry behavior
 
@@ -121,6 +122,9 @@ backoff and jitter capped at `max-backoff`. Deterministic 4xx errors are not ret
 are exhausted the original error is propagated (not wrapped in a `RetryExhaustedException`). To change
 any of this, define your own `IdempotentExecutor` (or `Retry`) bean; every auto-configured bean backs
 off when you provide your own.
+
+Set `per-attempt-timeout` (and your WebClient's `responseTimeout`) to bound a slow downstream: a
+timed-out attempt is retried safely precisely because the key stays stable.
 
 ## How it works
 

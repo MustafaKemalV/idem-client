@@ -2,6 +2,7 @@ package io.github.mustafakemalv.idemclient.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.time.Duration;
 import java.util.HashSet;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -79,5 +80,19 @@ class IdempotentExecutorTest {
         StepVerifier.create(executor.execute("my-key", capturesKey)).expectNext("ok").verifyComplete();
 
         assertThat(keys).containsExactly("my-key");
+    }
+
+    @Test
+    void timesOutSlowAttemptAndRetries() {
+        AtomicInteger attempts = new AtomicInteger();
+        IdempotentExecutor timeoutExecutor = new IdempotentExecutor(
+                new UuidIdempotencyKeyGenerator(), Retry.max(3), Duration.ofMillis(50));
+        Mono<String> slowThenFast = Mono.defer(() -> attempts.incrementAndGet() == 1
+                ? Mono.delay(Duration.ofMillis(500)).thenReturn("slow") // first attempt times out
+                : Mono.just("ok"));
+
+        StepVerifier.create(timeoutExecutor.execute(slowThenFast)).expectNext("ok").verifyComplete();
+
+        assertThat(attempts.get()).isEqualTo(2); // first timed out, second succeeded
     }
 }

@@ -1,5 +1,6 @@
 package io.github.mustafakemalv.idemclient.core;
 
+import java.time.Duration;
 import java.util.Objects;
 import reactor.core.publisher.Mono;
 import reactor.util.retry.Retry;
@@ -18,10 +19,20 @@ public final class IdempotentExecutor {
 
     private final IdempotencyKeyGenerator keyGenerator;
     private final Retry retrySpec;
+    private final Duration perAttemptTimeout;
 
     public IdempotentExecutor(IdempotencyKeyGenerator keyGenerator, Retry retrySpec) {
+        this(keyGenerator, retrySpec, null);
+    }
+
+    /**
+     * @param perAttemptTimeout bounds each individual attempt; a timed-out attempt becomes a retryable
+     *     error (retried safely under the stable key). {@code null} means no timeout.
+     */
+    public IdempotentExecutor(IdempotencyKeyGenerator keyGenerator, Retry retrySpec, Duration perAttemptTimeout) {
         this.keyGenerator = Objects.requireNonNull(keyGenerator, "keyGenerator");
         this.retrySpec = Objects.requireNonNull(retrySpec, "retrySpec");
+        this.perAttemptTimeout = perAttemptTimeout;
     }
 
     /**
@@ -43,7 +54,8 @@ public final class IdempotentExecutor {
     public <T> Mono<T> execute(String idempotencyKey, Mono<T> operation) {
         Objects.requireNonNull(idempotencyKey, "idempotencyKey");
         Objects.requireNonNull(operation, "operation");
-        return operation
+        Mono<T> attempt = (perAttemptTimeout != null) ? operation.timeout(perAttemptTimeout) : operation;
+        return attempt
                 .retryWhen(retrySpec)
                 .contextWrite(ctx -> IdempotencyContext.withKey(ctx, idempotencyKey));
     }

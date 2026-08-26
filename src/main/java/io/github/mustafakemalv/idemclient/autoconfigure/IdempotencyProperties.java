@@ -23,6 +23,9 @@ public class IdempotencyProperties {
     /** Maximum (exponential) backoff between retry attempts. */
     private Duration maxBackoff = Duration.ofSeconds(2);
 
+    /** Per-attempt timeout; a timed-out attempt is retried as a transport error. Null = no timeout. */
+    private Duration perAttemptTimeout;
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -61,5 +64,13 @@ public class IdempotencyProperties {
 
     public void setMaxBackoff(Duration maxBackoff) {
         this.maxBackoff = maxBackoff;
+    }
+
+    public Duration getPerAttemptTimeout() {
+        return perAttemptTimeout;
+    }
+
+    public void setPerAttemptTimeout(Duration perAttemptTimeout) {
+        this.perAttemptTimeout = perAttemptTimeout;
     }
 }
