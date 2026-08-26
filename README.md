@@ -172,6 +172,10 @@ business identity), persist it alongside the operation, and pass it explicitly:
 
     idempotency.execute("order-42", wc -> wc.post().uri("/charge")...);
 
+Or derive a stable, non-leaking key (SHA-256) from your business identity with the built-in helper:
+
+    idempotency.execute(IdempotencyKeys.of("charge", orderId), wc -> wc.post().uri("/charge")...);
+
 That way a replay after a crash reuses the same key and the downstream deduplicates it. Genuine
 cross-process durability (a persisted key + response store) is intentionally out of scope for this
 transport-only library.
