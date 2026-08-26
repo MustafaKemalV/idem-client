@@ -1,6 +1,7 @@
 package io.github.mustafakemalv.idemclient.autoconfigure;
 
 import io.github.mustafakemalv.idemclient.core.IdempotencyKeyGenerator;
+import io.github.mustafakemalv.idemclient.core.IdempotencyListener;
 import io.github.mustafakemalv.idemclient.core.IdempotentExecutor;
 import io.github.mustafakemalv.idemclient.core.UuidIdempotencyKeyGenerator;
 import io.github.mustafakemalv.idemclient.web.IdempotencyKeyExchangeFilter;
@@ -17,11 +18,11 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 import reactor.util.retry.Retry;
 
 /**
- * Auto-configures idem-client: a default UUID {@link IdempotencyKeyGenerator}, an
- * {@link IdempotentExecutor} whose retry policy is built from {@code idem-client.*} properties, and an
- * {@link IdempotencyKeyExchangeFilter} bean to add to your WebClient. Backs off entirely when
- * {@code idem-client.enabled=false}; every bean is {@link ConditionalOnMissingBean} so any of them
- * can be overridden.
+ * Auto-configures idem-client: a default UUID {@link IdempotencyKeyGenerator}, a no-op
+ * {@link IdempotencyListener}, an {@link IdempotentExecutor} whose retry policy is built from
+ * {@code idem-client.*} properties, an {@link IdempotencyKeyExchangeFilter} bean, and an
+ * {@link IdempotentWebClientFactory}. Backs off entirely when {@code idem-client.enabled=false};
+ * every bean is {@link ConditionalOnMissingBean} so any of them can be overridden.
  */
 @AutoConfiguration
 @ConditionalOnClass(WebClient.class)
@@ -37,12 +38,23 @@ public class IdemClientAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    IdempotentExecutor idempotentExecutor(IdempotencyKeyGenerator keyGenerator, IdempotencyProperties properties) {
+    IdempotencyListener idempotencyListener() {
+        return IdempotencyListener.NOOP;
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    IdempotentExecutor idempotentExecutor(IdempotencyKeyGenerator keyGenerator, IdempotencyProperties properties,
+            IdempotencyListener listener) {
         validate(properties);
         Retry retrySpec = Retry.backoff(properties.getMaxAttempts(), properties.getMinBackoff())
                 .maxBackoff(properties.getMaxBackoff())
                 .filter(IdemClientAutoConfiguration::isRetryable)
-                .onRetryExhaustedThrow((spec, signal) -> signal.failure());
+                .doBeforeRetry(signal -> listener.onRetry(signal.totalRetries() + 1))
+                .onRetryExhaustedThrow((spec, signal) -> {
+                    listener.onExhausted();
+                    return signal.failure();
+                });
         return new IdempotentExecutor(keyGenerator, retrySpec, properties.getPerAttemptTimeout());
     }
 

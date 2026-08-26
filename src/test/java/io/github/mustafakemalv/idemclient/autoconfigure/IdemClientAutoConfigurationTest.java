@@ -3,6 +3,7 @@ package io.github.mustafakemalv.idemclient.autoconfigure;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.mustafakemalv.idemclient.core.IdempotencyKeyGenerator;
+import io.github.mustafakemalv.idemclient.core.IdempotencyListener;
 import io.github.mustafakemalv.idemclient.core.IdempotentExecutor;
 import io.github.mustafakemalv.idemclient.web.IdempotencyKeyExchangeFilter;
 import io.github.mustafakemalv.idemclient.web.IdempotentWebClientFactory;
@@ -24,6 +25,7 @@ class IdemClientAutoConfigurationTest {
             assertThat(context).hasSingleBean(IdempotentExecutor.class);
             assertThat(context).hasSingleBean(IdempotencyKeyExchangeFilter.class);
             assertThat(context).hasSingleBean(IdempotentWebClientFactory.class);
+            assertThat(context).hasSingleBean(IdempotencyListener.class);
         });
     }
 

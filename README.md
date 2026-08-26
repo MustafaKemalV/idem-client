@@ -126,6 +126,24 @@ off when you provide your own.
 Set `per-attempt-timeout` (and your WebClient's `responseTimeout`) to bound a slow downstream: a
 timed-out attempt is retried safely precisely because the key stays stable.
 
+## Observability
+
+The library requires no observability dependency. Implement `IdempotencyListener` as a bean to feed
+any metrics or tracing system; it replaces the no-op default:
+
+    @Bean
+    IdempotencyListener idempotencyListener(MeterRegistry registry) {
+        return new IdempotencyListener() {
+            @Override public void onRetry(long attempt) { registry.counter("idem.retries").increment(); }
+            @Override public void onExhausted() { registry.counter("idem.retries.exhausted").increment(); }
+        };
+    }
+
+The filter also logs at DEBUG when it stamps a key (the key is truncated in the log). For distributed
+tracing, the key lives in the Reactor Context: enable Reactor's automatic context propagation
+(`Hooks.enableAutomaticContextPropagation()`) and read the key from the Context to add it as a span
+tag, rather than from a ThreadLocal-backed MDC, which the reactive thread-hop would lose.
+
 ## How it works
 
 See [docs/how-it-works.md](docs/how-it-works.md) for the Reactor Context mechanics and why the key

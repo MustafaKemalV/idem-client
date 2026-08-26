@@ -2,6 +2,8 @@ package io.github.mustafakemalv.idemclient.web;
 
 import io.github.mustafakemalv.idemclient.core.IdempotencyContext;
 import java.util.Objects;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.springframework.web.reactive.function.client.ClientRequest;
 import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.ExchangeFilterFunction;
@@ -19,6 +21,8 @@ import reactor.core.publisher.Mono;
  * is sent, so the library does not rely on the transport to reject a header-injection attempt.
  */
 public final class IdempotencyKeyExchangeFilter implements ExchangeFilterFunction {
+
+    private static final Log log = LogFactory.getLog(IdempotencyKeyExchangeFilter.class);
 
     /** The IETF-draft header name used by Stripe, PayPal, and others. */
     public static final String DEFAULT_HEADER_NAME = "Idempotency-Key";
@@ -56,6 +60,9 @@ public final class IdempotencyKeyExchangeFilter implements ExchangeFilterFunctio
             return Mono.error(new IllegalArgumentException(
                     "idempotency key contains illegal characters (CR, LF, or a control character)"));
         }
+        if (log.isDebugEnabled()) {
+            log.debug("stamping '" + headerName + "' header with idempotency key " + truncate(key));
+        }
         return next.exchange(stampHeader(request, key));
     }
 
@@ -63,6 +70,10 @@ public final class IdempotencyKeyExchangeFilter implements ExchangeFilterFunctio
         return ClientRequest.from(request)
                 .header(headerName, key)
                 .build();
+    }
+
+    private static String truncate(String key) {
+        return key.length() <= 8 ? key : key.substring(0, 8) + "...";
     }
 
     private static String validateHeaderName(String headerName) {

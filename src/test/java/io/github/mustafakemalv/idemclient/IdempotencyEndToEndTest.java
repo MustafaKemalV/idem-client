@@ -14,6 +14,7 @@ import com.github.tomakehurst.wiremock.http.Fault;
 import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
 import com.github.tomakehurst.wiremock.junit5.WireMockTest;
 import io.github.mustafakemalv.idemclient.autoconfigure.IdemClientAutoConfiguration;
+import io.github.mustafakemalv.idemclient.core.IdempotencyListener;
 import io.github.mustafakemalv.idemclient.core.IdempotentExecutor;
 import io.github.mustafakemalv.idemclient.core.UuidIdempotencyKeyGenerator;
 import io.github.mustafakemalv.idemclient.web.IdempotencyKeyExchangeFilter;
@@ -22,6 +23,7 @@ import io.github.mustafakemalv.idemclient.web.IdempotentWebClientFactory;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -158,5 +160,36 @@ class IdempotencyEndToEndTest {
 
         verify(2, postRequestedFor(urlEqualTo("/charge")));
         assertThat(sentKeys().stream().distinct().count()).isEqualTo(1L); // same key across a REAL socket reset
+    }
+
+    @Test
+    void notifiesListenerOnRetryAndExhaustion(WireMockRuntimeInfo wm) {
+        stubFor(post(urlEqualTo("/charge")).willReturn(aResponse().withStatus(503)));
+        AtomicInteger retries = new AtomicInteger();
+        AtomicInteger exhausted = new AtomicInteger();
+        IdempotencyListener listener = new IdempotencyListener() {
+            @Override
+            public void onRetry(long attempt) {
+                retries.incrementAndGet();
+            }
+
+            @Override
+            public void onExhausted() {
+                exhausted.incrementAndGet();
+            }
+        };
+        Retry spec = Retry.backoff(2, Duration.ofMillis(1))
+                .filter(IdemClientAutoConfiguration::isRetryable)
+                .doBeforeRetry(s -> listener.onRetry(s.totalRetries() + 1))
+                .onRetryExhaustedThrow((sp, sig) -> {
+                    listener.onExhausted();
+                    return sig.failure();
+                });
+        IdempotentExecutor exec = new IdempotentExecutor(new UuidIdempotencyKeyGenerator(), spec);
+
+        StepVerifier.create(exec.execute(charge(clientFor(wm)))).expectError().verify();
+
+        assertThat(retries.get()).isEqualTo(2);   // two retries before exhaustion
+        assertThat(exhausted.get()).isEqualTo(1); // exhausted once
     }
 }
