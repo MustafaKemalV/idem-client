@@ -231,10 +231,12 @@ one subscription, so `onKeyMinted` is the only place it becomes visible to you.
 `onKeyMinted` firing more than once for what you believe is one logical operation is also the
 signature of the footgun described under [Bring your own retry](#bring-your-own-retry-carefully).
 
-The filter also logs at DEBUG when it stamps a key (the key is truncated in the log). For distributed
-tracing, the key lives in the Reactor Context: enable Reactor's automatic context propagation
-(`Hooks.enableAutomaticContextPropagation()`) and read the key from the Context to add it as a span
-tag, rather than from a ThreadLocal-backed MDC, which the reactive thread-hop would lose.
+The filter also logs at DEBUG when it stamps a key (truncated in the log). For distributed tracing,
+read the key from the Reactor Context inside your own chain, with `Mono.deferContextual` and
+`IdempotencyContext.keyFrom(...)`, and attach it as a span tag. Reactor's automatic context
+propagation (`Hooks.enableAutomaticContextPropagation()`) neither helps nor is needed here: it copies
+values only for registered `ThreadLocalAccessor`s, and this library registers none, precisely because
+the key must never depend on a ThreadLocal that the reactive thread-hop would lose.
 
 ## Guarding against key reuse
 
@@ -246,8 +248,11 @@ locally, before sending, if the same key is later used with a different fingerpr
             wc -> wc.post().uri("/charge").bodyValue(request).retrieve().bodyToMono(Receipt.class));
 
 You compute the fingerprint (for example a hash of the body and amount); the library does not buffer
-the reactive body. The guard is an in-memory, bounded, per-process LRU, so it catches a local mistake,
-not a cross-process conflict.
+the reactive body, and stores only a SHA-256 digest of whatever you pass, so a fingerprint that
+happens to contain card data is not retained. The guard is an in-memory, bounded, per-process LRU
+scoped to one client, so it catches a local mistake, not a cross-process conflict, and the same key
+used against a different downstream is not blocked. When the LRU fills it forgets its oldest keys and
+says so once in the log: a forgotten key reused with a different request is no longer caught.
 
 ## How it works
 
@@ -260,6 +265,11 @@ survives a retry.
   idempotency.
 - **The downstream must honor the header.** If it ignores `Idempotency-Key`, there is no protection.
 - **Reactive only.** v1 targets `WebClient`; there is no blocking (RestTemplate/Feign) variant.
+- **Your operation must be safely re-subscribable.** A retry resubscribes, so the request is sent
+  again from the same definition. `bodyValue` and `fromValue` are fine. A one-shot streaming body (a
+  `Flux<DataBuffer>` read from a file or an input stream) is not: the second attempt sends an empty or
+  partial body under the SAME key, which is exactly the same-key-different-body case the fingerprint
+  guard exists to catch.
 - **Key scope is one subscription.** Each subscription of a returned `Mono` gets its own key; a retry
   of that subscription keeps the same key. An explicit key must be unique per logical operation.
 - **One `execute(...)` is one logical operation, and one request.** The key is written for the whole
@@ -283,9 +293,21 @@ business identity), persist it alongside the operation, and pass it explicitly:
 
     idempotency.execute("order-42", wc -> wc.post().uri("/charge")...);
 
-Or derive a stable, non-leaking key (SHA-256) from your business identity with the built-in helper:
+Or derive a stable key from your business identity with the built-in helper:
 
     idempotency.execute(IdempotencyKeys.of("charge", orderId), wc -> wc.post().uri("/charge")...);
+
+`IdempotencyKeys.of` gives you a stable, well-formed key. It does **not** keep the input secret: the
+encoding is documented, and a business identity comes from a small, enumerable space, so anyone
+holding the key can try candidates until one matches. Do not feed it a card number. Where the key
+must also be unguessable, use the keyed variant:
+
+    idempotency.execute(IdempotencyKeys.hmac(secret, "charge", orderId), wc -> ...);
+
+Treat that secret as a signing key. It must outlive the operation and be identical everywhere the
+operation can be replayed, because rotating it changes every key, and a replay after a crash would
+then look like a brand-new operation: the double charge walks back in through the feature meant to
+prevent it.
 
 That way a replay after a crash reuses the same key and the downstream deduplicates it. Genuine
 cross-process durability (a persisted key + response store) is intentionally out of scope for this
