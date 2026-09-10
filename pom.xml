@@ -59,6 +59,12 @@
             <groupId>io.projectreactor</groupId>
             <artifactId>reactor-core</artifactId>
         </dependency>
+        <!-- Nullability annotations (@NullMarked). Arrives transitively with reactor-core, but the
+             library uses it directly, so it is declared. CLASS retention: consumers need nothing. -->
+        <dependency>
+            <groupId>org.jspecify</groupId>
+            <artifactId>jspecify</artifactId>
+        </dependency>
         <!-- @ConfigurationProperties IDE metadata -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

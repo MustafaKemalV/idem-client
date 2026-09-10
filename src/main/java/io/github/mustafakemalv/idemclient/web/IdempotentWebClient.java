@@ -5,6 +5,7 @@ import io.github.mustafakemalv.idemclient.core.KeyFingerprintGuard;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
+import org.jspecify.annotations.Nullable;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
@@ -26,11 +27,11 @@ public final class IdempotentWebClient {
 
     private final WebClient webClient;
     private final IdempotentExecutor executor;
-    private final KeyFingerprintGuard guard; // nullable = fingerprint guarding off
+    private final @Nullable KeyFingerprintGuard guard; // null = fingerprint guarding off
     /** Isolates this client's keys inside the shared guard: one client is one downstream. */
     private final String guardScope = "client-" + SCOPES.incrementAndGet();
 
-    IdempotentWebClient(WebClient webClient, IdempotentExecutor executor, KeyFingerprintGuard guard) {
+    IdempotentWebClient(WebClient webClient, IdempotentExecutor executor, @Nullable KeyFingerprintGuard guard) {
         this.webClient = Objects.requireNonNull(webClient, "webClient");
         this.executor = Objects.requireNonNull(executor, "executor");
         this.guard = guard;

@@ -3,6 +3,7 @@ package io.github.mustafakemalv.idemclient.web;
 import io.github.mustafakemalv.idemclient.core.IdempotentExecutor;
 import io.github.mustafakemalv.idemclient.core.KeyFingerprintGuard;
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 import org.springframework.web.reactive.function.client.WebClient;
 
 /**
@@ -16,14 +17,14 @@ public final class IdempotentWebClientFactory {
 
     private final IdempotentExecutor executor;
     private final IdempotencyKeyExchangeFilter filter;
-    private final KeyFingerprintGuard guard; // nullable = fingerprint guarding off
+    private final @Nullable KeyFingerprintGuard guard; // null = fingerprint guarding off
 
     public IdempotentWebClientFactory(IdempotentExecutor executor, IdempotencyKeyExchangeFilter filter) {
         this(executor, filter, null);
     }
 
     public IdempotentWebClientFactory(IdempotentExecutor executor, IdempotencyKeyExchangeFilter filter,
-            KeyFingerprintGuard guard) {
+            @Nullable KeyFingerprintGuard guard) {
         this.executor = Objects.requireNonNull(executor, "executor");
         this.filter = Objects.requireNonNull(filter, "filter");
         this.guard = guard;

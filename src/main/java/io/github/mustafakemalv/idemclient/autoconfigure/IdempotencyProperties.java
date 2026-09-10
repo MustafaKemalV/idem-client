@@ -2,6 +2,7 @@ package io.github.mustafakemalv.idemclient.autoconfigure;
 
 import io.github.mustafakemalv.idemclient.web.IdempotencyKeyExchangeFilter;
 import java.time.Duration;
+import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
@@ -33,7 +34,7 @@ public class IdempotencyProperties implements InitializingBean {
     private Duration maxBackoff = Duration.ofSeconds(2);
 
     /** Per-attempt timeout; a timed-out attempt is retried as a transport error. Null = no timeout. */
-    private Duration perAttemptTimeout;
+    private @Nullable Duration perAttemptTimeout;
 
     @Override
     public void afterPropertiesSet() {
@@ -91,11 +92,11 @@ public class IdempotencyProperties implements InitializingBean {
         this.maxBackoff = maxBackoff;
     }
 
-    public Duration getPerAttemptTimeout() {
+    public @Nullable Duration getPerAttemptTimeout() {
         return perAttemptTimeout;
     }
 
-    public void setPerAttemptTimeout(Duration perAttemptTimeout) {
+    public void setPerAttemptTimeout(@Nullable Duration perAttemptTimeout) {
         this.perAttemptTimeout = perAttemptTimeout;
     }
 }

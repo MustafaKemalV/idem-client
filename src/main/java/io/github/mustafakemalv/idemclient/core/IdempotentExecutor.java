@@ -5,6 +5,7 @@ import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.jspecify.annotations.Nullable;
 import reactor.core.publisher.Mono;
 import reactor.util.retry.Retry;
 
@@ -34,7 +35,7 @@ public final class IdempotentExecutor {
 
     private final IdempotencyKeyGenerator keyGenerator;
     private final Retry retrySpec;
-    private final Duration perAttemptTimeout;
+    private final @Nullable Duration perAttemptTimeout;
     private final IdempotencyListener listener;
 
     public IdempotentExecutor(IdempotencyKeyGenerator keyGenerator, Retry retrySpec) {
@@ -45,7 +46,8 @@ public final class IdempotentExecutor {
      * @param perAttemptTimeout bounds each individual attempt; a timed-out attempt becomes a retryable
      *     error (retried safely under the stable key). {@code null} means no timeout.
      */
-    public IdempotentExecutor(IdempotencyKeyGenerator keyGenerator, Retry retrySpec, Duration perAttemptTimeout) {
+    public IdempotentExecutor(IdempotencyKeyGenerator keyGenerator, Retry retrySpec,
+            @Nullable Duration perAttemptTimeout) {
         this(keyGenerator, retrySpec, perAttemptTimeout, IdempotencyListener.NOOP);
     }
 
@@ -55,8 +57,8 @@ public final class IdempotentExecutor {
      *     and a listener wired into the retry spec would report an attempt count with nothing to
      *     attach it to.
      */
-    public IdempotentExecutor(IdempotencyKeyGenerator keyGenerator, Retry retrySpec, Duration perAttemptTimeout,
-            IdempotencyListener listener) {
+    public IdempotentExecutor(IdempotencyKeyGenerator keyGenerator, Retry retrySpec,
+            @Nullable Duration perAttemptTimeout, IdempotencyListener listener) {
         this.keyGenerator = Objects.requireNonNull(keyGenerator, "keyGenerator");
         this.retrySpec = Objects.requireNonNull(retrySpec, "retrySpec");
         this.perAttemptTimeout = perAttemptTimeout;
