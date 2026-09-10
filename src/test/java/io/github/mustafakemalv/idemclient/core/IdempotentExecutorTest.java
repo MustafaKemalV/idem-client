@@ -1,10 +1,12 @@
 package io.github.mustafakemalv.idemclient.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Duration;
 import java.util.HashSet;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
@@ -94,5 +96,70 @@ class IdempotentExecutorTest {
         StepVerifier.create(timeoutExecutor.execute(slowThenFast)).expectNext("ok").verifyComplete();
 
         assertThat(attempts.get()).isEqualTo(2); // first timed out, second succeeded
+    }
+
+    @Test
+    void rejectsBlankKey() {
+        // The dangerous case: a blank key is a legal header value, so without this check it would be
+        // sent as an empty Idempotency-Key and read downstream as no key at all.
+        assertThatThrownBy(() -> executor.execute("", Mono.just("x")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("must not be blank");
+        assertThatThrownBy(() -> executor.execute("   ", Mono.just("x")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("must not be blank");
+    }
+
+    @Test
+    void acceptsKeyAtTheLimitAndRejectsOneCharacterMore() {
+        String atLimit = "k".repeat(IdempotentExecutor.MAX_KEY_LENGTH);
+        String overLimit = "k".repeat(IdempotentExecutor.MAX_KEY_LENGTH + 1);
+
+        StepVerifier.create(executor.execute(atLimit, Mono.just("ok"))).expectNext("ok").verifyComplete();
+
+        assertThatThrownBy(() -> executor.execute(overLimit, Mono.just("x")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("at most 255");
+    }
+
+    @Test
+    void rejectsAnythingOutsidePrintableAscii() {
+        List<String> bad = List.of(
+                "bad\r\nX-Evil: 1",  // header injection attempt
+                "with space",        // 0x20, silently trimmed by HTTP parsers
+                "t\tab",             // control character
+                "unicode-é",    // non-ASCII, mangled by the header encoder
+                "nbsp- ");      // obs-text, rejected by strict proxies
+
+        for (String key : bad) {
+            assertThatThrownBy(() -> executor.execute(key, Mono.just("x")))
+                    .as("key %s", key)
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Test
+    void acceptsTheKeysThisLibraryItselfProduces() {
+        StepVerifier.create(executor.execute(UUID.randomUUID().toString(), Mono.just("ok")))
+                .expectNext("ok").verifyComplete();
+        StepVerifier.create(executor.execute(IdempotencyKeys.of("charge", "order-42"), Mono.just("ok")))
+                .expectNext("ok").verifyComplete();
+    }
+
+    @Test
+    void invalidGeneratedKeyFailsOnceAndIsNeverRetried() {
+        AtomicInteger generated = new AtomicInteger();
+        IdempotentExecutor blankKeyExecutor = new IdempotentExecutor(() -> {
+            generated.incrementAndGet();
+            return "  ";
+        }, Retry.max(3));
+
+        StepVerifier.create(blankKeyExecutor.execute(Mono.just("ok")))
+                .expectError(IllegalArgumentException.class)
+                .verify();
+
+        // A key that cannot be sent is a caller mistake, not a transient failure: validating above the
+        // retry means it costs exactly one attempt, not the whole budget.
+        assertThat(generated.get()).isEqualTo(1);
     }
 }

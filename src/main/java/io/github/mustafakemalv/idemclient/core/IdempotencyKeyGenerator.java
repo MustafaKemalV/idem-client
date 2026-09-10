@@ -7,6 +7,11 @@ package io.github.mustafakemalv.idemclient.core;
  * operations never collide. Reusing the SAME key across retries of one operation is handled by the
  * library (via the Reactor Context), NOT by this generator, so a generator only ever answers
  * "give me a brand-new key".
+ *
+ * <p>The returned key must also be sendable as an HTTP header value: non-blank, at most
+ * {@link IdempotentExecutor#MAX_KEY_LENGTH} characters, and printable US-ASCII only (0x21-0x7E).
+ * {@link IdempotentExecutor} enforces this on every key it uses, so a generator that breaks the
+ * contract fails the operation instead of quietly sending an unusable header.
  */
 @FunctionalInterface
 public interface IdempotencyKeyGenerator {
