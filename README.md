@@ -262,6 +262,12 @@ survives a retry.
 - **Reactive only.** v1 targets `WebClient`; there is no blocking (RestTemplate/Feign) variant.
 - **Key scope is one subscription.** Each subscription of a returned `Mono` gets its own key; a retry
   of that subscription keeps the same key. An explicit key must be unique per logical operation.
+- **One `execute(...)` is one logical operation, and one request.** The key is written for the whole
+  subscription, so *every* request made inside a single `execute(...)` carries it. Chain two different
+  calls in one `execute` and they share a key, which entitles the downstream to treat the second as a
+  replay of the first and return the first response instead of performing it, so the second operation
+  silently never happens. Give each operation its own `execute(...)`. The library logs a WARN when one
+  key is stamped on two different requests.
 
 ## Durability boundary
 

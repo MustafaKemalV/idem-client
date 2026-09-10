@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 import reactor.test.StepVerifier;
+import reactor.util.context.Context;
 
 class IdempotencyContextTest {
 
@@ -32,6 +33,40 @@ class IdempotencyContextTest {
         StepVerifier.create(pipeline)
                 .assertNext(found -> assertThat(found).isEmpty())
                 .verifyComplete();
+    }
+
+    @Test
+    void aRetryOfTheSameRequestIsNotReportedAsKeyReuse() {
+        Context context = IdempotencyContext.withKey(Context.empty(), "key-123");
+
+        // Every attempt of one operation stamps the same request under the same Context.
+        assertThat(IdempotencyContext.recordStampedRequest(context, "POST /charge")).isEmpty();
+        assertThat(IdempotencyContext.recordStampedRequest(context, "POST /charge")).isEmpty();
+        assertThat(IdempotencyContext.recordStampedRequest(context, "POST /charge")).isEmpty();
+    }
+
+    @Test
+    void aSecondDifferentRequestUnderOneKeyIsReported() {
+        Context context = IdempotencyContext.withKey(Context.empty(), "key-123");
+
+        assertThat(IdempotencyContext.recordStampedRequest(context, "POST /charge")).isEmpty();
+        assertThat(IdempotencyContext.recordStampedRequest(context, "POST /confirm"))
+                .contains("POST /charge"); // reports the operation the key really belongs to
+    }
+
+    @Test
+    void anUnwrittenContextReportsNothing() {
+        assertThat(IdempotencyContext.recordStampedRequest(Context.empty(), "POST /charge")).isEmpty();
+    }
+
+    @Test
+    void eachSubscriptionGetsItsOwnScopeMarker() {
+        // withKey runs per subscription, so two operations never share the marker.
+        Context first = IdempotencyContext.withKey(Context.empty(), "key-1");
+        Context second = IdempotencyContext.withKey(Context.empty(), "key-2");
+
+        assertThat(IdempotencyContext.recordStampedRequest(first, "POST /charge")).isEmpty();
+        assertThat(IdempotencyContext.recordStampedRequest(second, "POST /confirm")).isEmpty();
     }
 
     @Test

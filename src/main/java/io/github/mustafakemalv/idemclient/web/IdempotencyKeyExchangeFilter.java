@@ -9,6 +9,7 @@ import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.ExchangeFilterFunction;
 import org.springframework.web.reactive.function.client.ExchangeFunction;
 import reactor.core.publisher.Mono;
+import reactor.util.context.ContextView;
 
 /**
  * An {@link ExchangeFilterFunction} that stamps outbound WebClient requests with the idempotency
@@ -50,20 +51,39 @@ public final class IdempotencyKeyExchangeFilter implements ExchangeFilterFunctio
                 return next.exchange(request);
             }
             return IdempotencyContext.keyFrom(context)
-                    .map(key -> exchangeWithKey(request, key, next))
+                    .map(key -> exchangeWithKey(request, key, next, context))
                     .orElseGet(() -> next.exchange(request));
         });
     }
 
-    private Mono<ClientResponse> exchangeWithKey(ClientRequest request, String key, ExchangeFunction next) {
+    private Mono<ClientResponse> exchangeWithKey(ClientRequest request, String key, ExchangeFunction next,
+            ContextView context) {
         if (!isValidFieldValue(key)) {
             return Mono.error(new IllegalArgumentException(
                     "idempotency key contains illegal characters (CR, LF, or a control character)"));
         }
+        warnIfKeyIsBeingReusedForAnotherRequest(request, key, context);
         if (log.isDebugEnabled()) {
             log.debug("stamping '" + headerName + "' header with idempotency key " + truncate(key));
         }
         return next.exchange(stampHeader(request, key));
+    }
+
+    /**
+     * One key means one logical operation. Two different requests inside a single operation share the
+     * key, and the downstream is then entitled to treat the second as a replay of the first, so it can
+     * silently never happen. A retry sends the same request and does not trip this.
+     */
+    private void warnIfKeyIsBeingReusedForAnotherRequest(ClientRequest request, String key, ContextView context) {
+        if (!log.isWarnEnabled()) {
+            return;
+        }
+        String identity = request.method().name() + " " + request.url();
+        IdempotencyContext.recordStampedRequest(context, identity).ifPresent(firstStamped -> log.warn(
+                "idempotency key " + truncate(key) + " was already stamped on '" + firstStamped
+                        + "' and is now being stamped on '" + identity + "'. One key identifies ONE "
+                        + "logical operation, so the downstream may treat the second request as a replay "
+                        + "of the first and never perform it. Give each operation its own execute(...)."));
     }
 
     private ClientRequest stampHeader(ClientRequest request, String key) {
