@@ -14,6 +14,10 @@ import reactor.core.publisher.Mono;
  * <p>This is the recommended, footgun-free entry point: obtain one from
  * {@link IdempotentWebClientFactory#create(WebClient.Builder)} and every call routed through
  * {@link #execute(Function)} both carries a stable key and is retried by the executor.
+ *
+ * <p>All three overloads share one rule: the {@code call} function is applied per SUBSCRIPTION, and
+ * anything wrong with the arguments arrives as an {@code onError} signal rather than as an exception
+ * thrown out of the method. One method name behaves one way.
  */
 public final class IdempotentWebClient {
 
@@ -33,13 +37,13 @@ public final class IdempotentWebClient {
      */
     public <T> Mono<T> execute(Function<WebClient, Mono<T>> call) {
         Objects.requireNonNull(call, "call");
-        return executor.execute(call.apply(webClient));
+        return Mono.defer(() -> executor.execute(call.apply(webClient)));
     }
 
     /** Runs the given call with a caller-supplied idempotency key. */
     public <T> Mono<T> execute(String idempotencyKey, Function<WebClient, Mono<T>> call) {
         Objects.requireNonNull(call, "call");
-        return executor.execute(idempotencyKey, call.apply(webClient));
+        return Mono.defer(() -> executor.execute(idempotencyKey, call.apply(webClient)));
     }
 
     /**
@@ -50,10 +54,9 @@ public final class IdempotentWebClient {
      * reactive body.
      */
     public <T> Mono<T> execute(String idempotencyKey, String fingerprint, Function<WebClient, Mono<T>> call) {
-        Objects.requireNonNull(idempotencyKey, "idempotencyKey");
-        Objects.requireNonNull(fingerprint, "fingerprint");
         Objects.requireNonNull(call, "call");
         return Mono.defer(() -> {
+            Objects.requireNonNull(fingerprint, "fingerprint");
             if (guard != null) {
                 guard.check(idempotencyKey, fingerprint);
             }
