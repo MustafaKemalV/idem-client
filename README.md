@@ -132,8 +132,9 @@ exponential backoff and jitter capped at `max-backoff`. What counts as transient
 
 | Retried | Not retried |
 | --- | --- |
-| HTTP 5xx and HTTP 429 | Deterministic 4xx (400, 401, 403, 404, 422, ...) |
+| HTTP 5xx | Deterministic 4xx: 400, 401, 403, 404, 409, 422 and the rest |
 | Transport failures: connection reset, premature close, DNS and TLS failures (`WebClientRequestException`, `IOException`) | Anything raised on your own side of the exchange: a `NullPointerException` in your `map`, a decoding failure, a cancelled subscription |
+| The four 4xx codes the specs call retryable: 408 Request Timeout, 421 Misdirected Request, 425 Too Early, 429 Too Many Requests | |
 | The per-attempt timeout (`TimeoutException`) | |
 | A connection that dies **mid-response**, after the status line arrived | |
 

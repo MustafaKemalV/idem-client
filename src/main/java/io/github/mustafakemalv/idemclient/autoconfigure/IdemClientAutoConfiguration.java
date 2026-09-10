@@ -8,6 +8,7 @@ import io.github.mustafakemalv.idemclient.core.UuidIdempotencyKeyGenerator;
 import io.github.mustafakemalv.idemclient.web.IdempotencyKeyExchangeFilter;
 import io.github.mustafakemalv.idemclient.web.IdempotentWebClientFactory;
 import java.io.IOException;
+import java.util.Set;
 import java.util.concurrent.TimeoutException;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -35,6 +36,18 @@ import reactor.util.retry.Retry;
 @ConditionalOnProperty(prefix = "idem-client", name = "enabled", havingValue = "true", matchIfMissing = true)
 @EnableConfigurationProperties(IdempotencyProperties.class)
 public class IdemClientAutoConfiguration {
+
+    /**
+     * The 4xx codes the HTTP specifications designate as retryable, as opposed to the deterministic
+     * ones: 408 Request Timeout (RFC 9110, "the client MAY repeat the request without modifications"),
+     * 421 Misdirected Request (retry over a different connection), 425 Too Early (retry once the
+     * handshake completes) and 429 Too Many Requests.
+     *
+     * <p>408 is the one that matters most here. The server gave up while RECEIVING the request, so it
+     * may have begun processing what it did receive: the outcome is unknown, which is the case a stable
+     * idempotency key exists to make safe.
+     */
+    private static final Set<Integer> RETRYABLE_CLIENT_ERRORS = Set.of(408, 421, 425, 429);
 
     @Bean
     @ConditionalOnMissingBean
@@ -82,7 +95,8 @@ public class IdemClientAutoConfiguration {
     }
 
     /**
-     * Retries TRANSIENT failures only, as an ALLOW-list: HTTP 5xx and 429, plus the transport failures
+     * Retries TRANSIENT failures only, as an ALLOW-list: HTTP 5xx, the four 4xx codes the specs call
+     * retryable ({@link #RETRYABLE_CLIENT_ERRORS}), plus the transport failures
      * that leave the outcome genuinely unknown (a connection reset, a premature close, a DNS or TLS
      * failure, a per-attempt timeout). Everything else is not retried.
      *
@@ -99,7 +113,7 @@ public class IdemClientAutoConfiguration {
     public static boolean isRetryable(Throwable error) {
         if (error instanceof WebClientResponseException response) {
             HttpStatusCode status = response.getStatusCode();
-            if (status.is5xxServerError() || status.value() == 429) {
+            if (status.is5xxServerError() || RETRYABLE_CLIENT_ERRORS.contains(status.value())) {
                 return true;
             }
             if (status.is4xxClientError()) {

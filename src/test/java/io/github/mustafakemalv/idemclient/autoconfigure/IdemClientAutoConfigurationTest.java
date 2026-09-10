@@ -116,10 +116,17 @@ class IdemClientAutoConfigurationTest {
     }
 
     @Test
-    void retriesServerErrorsAndTooManyRequests() {
+    void retriesServerErrors() {
         assertThat(retryable(response(500))).isTrue();
         assertThat(retryable(response(503))).isTrue();
-        assertThat(retryable(response(429))).isTrue();
+    }
+
+    @Test
+    void retriesTheClientErrorsTheSpecsCallRetryable() {
+        assertThat(retryable(response(429))).isTrue(); // Too Many Requests
+        assertThat(retryable(response(408))).isTrue(); // Request Timeout: the server gave up mid-receive
+        assertThat(retryable(response(421))).isTrue(); // Misdirected Request: retry on another connection
+        assertThat(retryable(response(425))).isTrue(); // Too Early: retry after the handshake
     }
 
     @Test
@@ -127,6 +134,7 @@ class IdemClientAutoConfigurationTest {
         assertThat(retryable(response(400))).isFalse();
         assertThat(retryable(response(401))).isFalse();
         assertThat(retryable(response(404))).isFalse();
+        assertThat(retryable(response(409))).isFalse();
         assertThat(retryable(response(422))).isFalse();
     }
 
