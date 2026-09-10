@@ -99,7 +99,18 @@ public class IdemClientAutoConfiguration {
     public static boolean isRetryable(Throwable error) {
         if (error instanceof WebClientResponseException response) {
             HttpStatusCode status = response.getStatusCode();
-            return status.is5xxServerError() || status.value() == 429;
+            if (status.is5xxServerError() || status.value() == 429) {
+                return true;
+            }
+            if (status.is4xxClientError()) {
+                return false; // a status line arrived, so the outcome is known: retrying cannot help
+            }
+            // A status arrived but the transport died before the body did. Spring reports that as a
+            // WebClientResponseException carrying the RESPONSE status (a 200, typically) with the
+            // IOException as its cause. The request was dispatched, the downstream may well have
+            // processed it, and we never learned the outcome. That is the ambiguous case a stable
+            // idempotency key exists to make safe, and it is the one this library must retry.
+            return response.getCause() instanceof IOException;
         }
         return error instanceof WebClientRequestException // reactor-netty wraps transport failures here
                 || error instanceof IOException           // other connectors, and ClosedChannelException

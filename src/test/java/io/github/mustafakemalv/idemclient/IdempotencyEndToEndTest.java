@@ -23,10 +23,12 @@ import io.github.mustafakemalv.idemclient.core.UuidIdempotencyKeyGenerator;
 import io.github.mustafakemalv.idemclient.web.IdempotencyKeyExchangeFilter;
 import io.github.mustafakemalv.idemclient.web.IdempotentWebClient;
 import io.github.mustafakemalv.idemclient.web.IdempotentWebClientFactory;
+import java.io.IOException;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -163,6 +165,39 @@ class IdempotencyEndToEndTest {
 
         verify(2, postRequestedFor(urlEqualTo("/charge")));
         assertThat(sentKeys().stream().distinct().count()).isEqualTo(1L); // same key across a REAL socket reset
+    }
+
+    @Test
+    void aConnectionDyingMidResponseIsReportedWithTheResponseStatusAndAnIoCause(WireMockRuntimeInfo wm) {
+        // Documents the Spring behaviour the retry predicate depends on: once the status line has been
+        // read, a transport failure while reading the BODY is reported as a WebClientResponseException
+        // carrying that status, with the real IOException as its cause.
+        stubFor(post(urlEqualTo("/charge")).willReturn(aResponse().withFault(Fault.MALFORMED_RESPONSE_CHUNK)));
+        AtomicReference<Throwable> captured = new AtomicReference<>();
+
+        StepVerifier.create(charge(clientFor(wm)).doOnError(captured::set)).expectError().verify();
+
+        assertThat(captured.get()).isInstanceOf(WebClientResponseException.class);
+        assertThat(((WebClientResponseException) captured.get()).getStatusCode().value()).isEqualTo(200);
+        assertThat(captured.get().getCause()).isInstanceOf(IOException.class);
+    }
+
+    @Test
+    void retriesAConnectionThatDiesMidResponseAndReusesTheSameKey(WireMockRuntimeInfo wm) {
+        stubFor(post(urlEqualTo("/charge")).inScenario("mid-body")
+                .whenScenarioStateIs(STARTED)
+                .willReturn(aResponse().withFault(Fault.MALFORMED_RESPONSE_CHUNK))
+                .willSetStateTo("second"));
+        stubFor(post(urlEqualTo("/charge")).inScenario("mid-body")
+                .whenScenarioStateIs("second")
+                .willReturn(aResponse().withStatus(200).withBody("ok")));
+        IdempotentExecutor exec = new IdempotentExecutor(new UuidIdempotencyKeyGenerator(),
+                Retry.backoff(3, Duration.ofMillis(1)).filter(IdemClientAutoConfiguration::isRetryable));
+
+        StepVerifier.create(exec.execute(charge(clientFor(wm)))).expectNext("ok").verifyComplete();
+
+        verify(2, postRequestedFor(urlEqualTo("/charge")));
+        assertThat(sentKeys().stream().distinct().count()).isEqualTo(1L); // same key, so it is safe
     }
 
     @Test

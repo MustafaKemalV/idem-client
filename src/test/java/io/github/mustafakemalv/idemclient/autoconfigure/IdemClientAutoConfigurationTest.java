@@ -112,6 +112,24 @@ class IdemClientAutoConfigurationTest {
         assertThat(retryable(new CancellationException())).isFalse();
     }
 
+    @Test
+    void retriesAResponseWhoseTransportDiedBeforeTheBodyArrived() {
+        WebClientResponseException truncated = response(200);
+        truncated.initCause(new SocketException("Connection reset"));
+
+        // 200 is neither 5xx nor 429, so keying off the status alone refuses to retry the one failure
+        // this library exists for: the request was processed and we never learned the outcome.
+        assertThat(retryable(truncated)).isTrue();
+    }
+
+    @Test
+    void doesNotRetryAClientErrorEvenIfItsBodyWasTruncated() {
+        WebClientResponseException truncated = response(400);
+        truncated.initCause(new SocketException("Connection reset"));
+
+        assertThat(retryable(truncated)).isFalse(); // the status arrived, so the outcome is known
+    }
+
     private static boolean retryable(Throwable error) {
         return IdemClientAutoConfiguration.isRetryable(error);
     }
