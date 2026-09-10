@@ -50,7 +50,6 @@ public class IdemClientAutoConfiguration {
     @ConditionalOnMissingBean
     IdempotentExecutor idempotentExecutor(IdempotencyKeyGenerator keyGenerator, IdempotencyProperties properties,
             IdempotencyListener listener) {
-        validate(properties);
         Retry retrySpec = Retry.backoff(properties.getMaxAttempts(), properties.getMinBackoff())
                 .maxBackoff(properties.getMaxBackoff())
                 .filter(IdemClientAutoConfiguration::isRetryable)
@@ -116,15 +115,4 @@ public class IdemClientAutoConfiguration {
                 || error instanceof TimeoutException;     // per-attempt timeout: the outcome is unknown
     }
 
-    private static void validate(IdempotencyProperties properties) {
-        if (properties.getMaxAttempts() < 0) {
-            throw new IllegalStateException("idem-client.max-attempts must be >= 0");
-        }
-        if (properties.getMinBackoff().isNegative() || properties.getMaxBackoff().isNegative()) {
-            throw new IllegalStateException("idem-client.min-backoff and max-backoff must not be negative");
-        }
-        if (properties.getMaxBackoff().compareTo(properties.getMinBackoff()) < 0) {
-            throw new IllegalStateException("idem-client.max-backoff must be >= min-backoff");
-        }
-    }
 }

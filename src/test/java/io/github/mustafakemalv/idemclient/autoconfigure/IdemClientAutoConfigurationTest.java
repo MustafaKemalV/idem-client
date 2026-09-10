@@ -7,6 +7,7 @@ import io.github.mustafakemalv.idemclient.core.IdempotencyKeyGenerator;
 import io.github.mustafakemalv.idemclient.core.IdempotencyListener;
 import io.github.mustafakemalv.idemclient.core.IdempotentExecutor;
 import io.github.mustafakemalv.idemclient.core.KeyFingerprintGuard;
+import io.github.mustafakemalv.idemclient.core.UuidIdempotencyKeyGenerator;
 import io.github.mustafakemalv.idemclient.web.IdempotencyKeyExchangeFilter;
 import io.github.mustafakemalv.idemclient.web.IdempotentWebClientFactory;
 import java.io.IOException;
@@ -24,6 +25,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.web.reactive.function.client.WebClientRequestException;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
+import reactor.util.retry.Retry;
 
 class IdemClientAutoConfigurationTest {
 
@@ -69,6 +71,21 @@ class IdemClientAutoConfigurationTest {
     @Test
     void failsFastOnInvalidConfig() {
         runner.withPropertyValues("idem-client.max-attempts=-1").run(context ->
+                assertThat(context).hasFailed());
+    }
+
+    @Test
+    void validatesPropertiesEvenWhenTheExecutorBeanIsReplaced() {
+        // Validation used to live inside the executor bean method, so an application that supplied its
+        // own executor silently skipped it and ran on nonsense configuration.
+        runner.withUserConfiguration(CustomExecutorConfig.class)
+                .withPropertyValues("idem-client.max-attempts=-1")
+                .run(context -> assertThat(context).hasFailed());
+    }
+
+    @Test
+    void rejectsANonPositivePerAttemptTimeout() {
+        runner.withPropertyValues("idem-client.per-attempt-timeout=0s").run(context ->
                 assertThat(context).hasFailed());
     }
 
@@ -136,6 +153,14 @@ class IdemClientAutoConfigurationTest {
 
     private static WebClientResponseException response(int status) {
         return WebClientResponseException.create(status, "test", HttpHeaders.EMPTY, new byte[0], null);
+    }
+
+    @Configuration
+    static class CustomExecutorConfig {
+        @Bean
+        IdempotentExecutor customExecutor() {
+            return new IdempotentExecutor(new UuidIdempotencyKeyGenerator(), Retry.max(1));
+        }
     }
 
     @Configuration
