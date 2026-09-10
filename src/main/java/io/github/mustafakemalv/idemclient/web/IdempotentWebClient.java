@@ -3,6 +3,7 @@ package io.github.mustafakemalv.idemclient.web;
 import io.github.mustafakemalv.idemclient.core.IdempotentExecutor;
 import io.github.mustafakemalv.idemclient.core.KeyFingerprintGuard;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
@@ -21,9 +22,13 @@ import reactor.core.publisher.Mono;
  */
 public final class IdempotentWebClient {
 
+    private static final AtomicLong SCOPES = new AtomicLong();
+
     private final WebClient webClient;
     private final IdempotentExecutor executor;
     private final KeyFingerprintGuard guard; // nullable = fingerprint guarding off
+    /** Isolates this client's keys inside the shared guard: one client is one downstream. */
+    private final String guardScope = "client-" + SCOPES.incrementAndGet();
 
     IdempotentWebClient(WebClient webClient, IdempotentExecutor executor, KeyFingerprintGuard guard) {
         this.webClient = Objects.requireNonNull(webClient, "webClient");
@@ -56,14 +61,17 @@ public final class IdempotentWebClient {
      * already used with a DIFFERENT fingerprint (a same-key-different-body mistake), it fails with an
      * {@link io.github.mustafakemalv.idemclient.core.IdempotencyKeyConflictException} before the request
      * is sent. You compute the fingerprint (e.g. a hash of the body); the library does not buffer the
-     * reactive body.
+     * reactive body, and stores only a digest of whatever you pass.
+     *
+     * <p>The guard is scoped to THIS client, so the same key used against a different downstream is a
+     * different operation and is not blocked by this one.
      */
     public <T> Mono<T> execute(String idempotencyKey, String fingerprint, Function<WebClient, Mono<T>> call) {
         Objects.requireNonNull(call, "call");
         return Mono.defer(() -> {
             Objects.requireNonNull(fingerprint, "fingerprint");
             if (guard != null) {
-                guard.check(idempotencyKey, fingerprint);
+                guard.check(guardScope, idempotencyKey, fingerprint);
             }
             return executor.execute(idempotencyKey, call.apply(webClient));
         });
