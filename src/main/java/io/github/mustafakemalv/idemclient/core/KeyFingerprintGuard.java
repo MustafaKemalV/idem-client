@@ -17,6 +17,13 @@ import org.apache.commons.logging.LogFactory;
  *
  * <p>In-memory and per-process only: it catches a local caller mistake, not a cross-process conflict.
  *
+ * <p>It is deliberately NOT scoped by downstream. A key identifies one logical operation, which is the
+ * rule the whole library is built on, so charging at a card processor and recording in a ledger are two
+ * operations and want two keys even though they are one business event. Reusing one key for both is
+ * the mistake this class exists to catch, and scoping the check per client would have hidden it. If you
+ * genuinely mean to send one key to two downstreams, use the two-argument
+ * {@code execute(key, call)} and do not offer a fingerprint.
+ *
  * <p>What it stores is a SHA-256 digest of the fingerprint, never the fingerprint itself. The caller
  * decides what a fingerprint is and may reasonably hand over a serialized request body, so keeping it
  * verbatim would hold card numbers and names in the heap, and would make the cap a bound on the number
@@ -28,9 +35,6 @@ import org.apache.commons.logging.LogFactory;
 public final class KeyFingerprintGuard {
 
     private static final Log log = LogFactory.getLog(KeyFingerprintGuard.class);
-
-    /** Separator for the composite map key. A scope is always "client-N", so it can never contain this. */
-    private static final String SCOPE_SEPARATOR = "::";
 
     private final AtomicBoolean evictionReported = new AtomicBoolean();
     private final Map<String, String> seen;
@@ -52,24 +56,17 @@ public final class KeyFingerprintGuard {
     }
 
     /**
-     * Records the fingerprint for {@code key} within {@code scope} on first use; throws if that key was
-     * already seen in the same scope with a different fingerprint.
-     *
-     * @param scope isolates one caller's keys from another's. Two providers keyed by the same internal
-     *     identifier (an {@code order-42} sent both to a card processor and to a ledger) are different
-     *     operations with different bodies, and without a scope the second, entirely legitimate call
-     *     would be refused locally and never sent.
+     * Records the fingerprint for {@code key} on first use; throws if that key was already seen with a
+     * different fingerprint, wherever it was sent.
      */
-    public void check(String scope, String key, String fingerprint) {
-        Objects.requireNonNull(scope, "scope");
+    public void check(String key, String fingerprint) {
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(fingerprint, "fingerprint");
-        String entry = scope + SCOPE_SEPARATOR + key;
         String digest = IdempotencyKeys.of(fingerprint);
         synchronized (seen) {
-            String existing = seen.get(entry);
+            String existing = seen.get(key);
             if (existing == null) {
-                seen.put(entry, digest);
+                seen.put(key, digest);
             } else if (!existing.equals(digest)) {
                 throw new IdempotencyKeyConflictException(key);
             }

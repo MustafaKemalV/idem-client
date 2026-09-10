@@ -254,11 +254,18 @@ locally, before sending, if the same key is later used with a different fingerpr
             wc -> wc.post().uri("/charge").bodyValue(request).retrieve().bodyToMono(Receipt.class));
 
 You compute the fingerprint (for example a hash of the body and amount); the library does not buffer
-the reactive body, and stores only a SHA-256 digest of whatever you pass, so a fingerprint that
-happens to contain card data is not retained. The guard is an in-memory, bounded, per-process LRU
-scoped to one client, so it catches a local mistake, not a cross-process conflict, and the same key
-used against a different downstream is not blocked. When the LRU fills it forgets its oldest keys and
-says so once in the log: a forgotten key reused with a different request is no longer caught.
+the reactive body, and stores a SHA-256 digest rather than the value you pass, so a serialized body
+is not kept in the heap verbatim. Digesting is not encryption, though: pass something low-entropy and
+the digest is still a commitment to it, so hash the body yourself before handing it over if it
+carries card data.
+
+The guard is an in-memory, bounded, per-process LRU, so it catches a local mistake, not a
+cross-process conflict. It is not scoped by downstream, on purpose: a key identifies one logical
+operation, so charging at a processor and recording in a ledger are two operations that want two
+keys, even though they are one business event, and a per-client scope would have hidden exactly that
+mistake. If you deliberately send one key to two downstreams, use `execute(key, call)` without a
+fingerprint. When the LRU fills it forgets its oldest keys and says so once in the log: a forgotten
+key reused with a different request is no longer caught.
 
 ## How it works
 
@@ -274,8 +281,8 @@ survives a retry.
 - **Your operation must be safely re-subscribable.** A retry resubscribes, so the request is sent
   again from the same definition. `bodyValue` and `fromValue` are fine. A one-shot streaming body (a
   `Flux<DataBuffer>` read from a file or an input stream) is not: the second attempt sends an empty or
-  partial body under the SAME key, which is exactly the same-key-different-body case the fingerprint
-  guard exists to catch.
+  partial body under the SAME key. Nothing catches this for you, the fingerprint guard included, since
+  it runs once per operation and never sees the retry.
 - **Key scope is one subscription.** Each subscription of a returned `Mono` gets its own key; a retry
   of that subscription keeps the same key. An explicit key must be unique per logical operation.
 - **One `execute(...)` is one logical operation, and one request.** The key is written for the whole
