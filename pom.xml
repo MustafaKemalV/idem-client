@@ -192,6 +192,11 @@
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-gpg-plugin</artifactId>
+                        <!-- Pinned: unlike source and javadoc, this one is not managed by the parent,
+                             so Maven resolved it on its own and warned that it threatens build
+                             stability. The plugin that signs release artifacts is the last one whose
+                             version should be decided by whatever happens to be newest. -->
+                        <version>3.2.8</version>
                         <executions>
                             <execution>
                                 <id>sign-artifacts</id>
