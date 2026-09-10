@@ -75,6 +75,19 @@ class IdemClientAutoConfigurationTest {
     }
 
     @Test
+    void configurationMetadataIsActuallyGenerated() throws Exception {
+        // The configuration processor was declared for 24 commits and never ran: Java 23 stopped
+        // enabling classpath-discovered processors implicitly, so it produced nothing and idem-client.*
+        // had no IDE completion. A silent no-op is exactly why this needs an assertion and not a
+        // pom entry taken on trust.
+        var metadata = getClass().getResource("/META-INF/spring-configuration-metadata.json");
+        assertThat(metadata).as("annotation processing must be enabled in the compiler plugin").isNotNull();
+        assertThat(java.nio.file.Files.readString(java.nio.file.Path.of(metadata.toURI())))
+                .contains("idem-client.header-name")
+                .contains("idem-client.per-attempt-timeout");
+    }
+
+    @Test
     void validatesPropertiesEvenWhenTheExecutorBeanIsReplaced() {
         // Validation used to live inside the executor bean method, so an application that supplied its
         // own executor silently skipped it and ran on nonsense configuration.

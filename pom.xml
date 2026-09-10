@@ -92,4 +92,48 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+            </resource>
+            <!-- Ship the licence inside the jar, not only in the repository: a consumer auditing their
+                 dependencies looks in the artifact. -->
+            <resource>
+                <directory>${project.basedir}</directory>
+                <targetPath>META-INF</targetPath>
+                <includes>
+                    <include>LICENSE</include>
+                </includes>
+            </resource>
+        </resources>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <!-- Java 23 and later no longer run annotation processors discovered on the
+                         classpath unless asked. Without this, spring-boot-configuration-processor is
+                         declared, sits on the classpath, and silently produces nothing, so the
+                         idem-client.* properties have no IDE metadata at all. A test asserts the
+                         generated file exists, because a silent no-op is exactly how this got missed. -->
+                    <proc>full</proc>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <configuration>
+                    <archive>
+                        <manifestEntries>
+                            <!-- A stable module name for consumers on the module path, so adopting JPMS
+                                 later cannot change the name they already compiled against. -->
+                            <Automatic-Module-Name>io.github.mustafakemalv.idemclient</Automatic-Module-Name>
+                        </manifestEntries>
+                    </archive>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 </project>
