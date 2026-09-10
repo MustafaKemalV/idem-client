@@ -7,6 +7,8 @@ import io.github.mustafakemalv.idemclient.core.KeyFingerprintGuard;
 import io.github.mustafakemalv.idemclient.core.UuidIdempotencyKeyGenerator;
 import io.github.mustafakemalv.idemclient.web.IdempotencyKeyExchangeFilter;
 import io.github.mustafakemalv.idemclient.web.IdempotentWebClientFactory;
+import java.io.IOException;
+import java.util.concurrent.TimeoutException;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -15,6 +17,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientRequestException;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.util.retry.Retry;
 
@@ -79,17 +82,28 @@ public class IdemClientAutoConfiguration {
     }
 
     /**
-     * Retries transient failures only: HTTP 5xx and 429 (Too Many Requests), plus non-HTTP-response
-     * errors (typically transport failures like a connection reset or timeout, exactly the ambiguous
-     * "did my request arrive?" case a stable idempotency key protects). Deterministic HTTP 4xx
-     * (400/401/403/404/422, ...) are NOT retried, since a retry cannot fix them.
+     * Retries TRANSIENT failures only, as an ALLOW-list: HTTP 5xx and 429, plus the transport failures
+     * that leave the outcome genuinely unknown (a connection reset, a premature close, a DNS or TLS
+     * failure, a per-attempt timeout). Everything else is not retried.
+     *
+     * <p>An allow-list, not a deny-list, and the difference is the whole point. Listing only what is
+     * NOT retryable sweeps in every failure raised on the caller's own side of the exchange: a
+     * {@code NullPointerException} in the caller's mapping function, a decoding failure, a 4xx the
+     * caller mapped to a domain exception with {@code onStatus}. Those are deterministic, no retry can
+     * fix them, and re-sending the request turns a local bug into repeated remote side effects.
+     *
+     * <p>The trade-off, stated plainly: map a 5xx to your own exception type with {@code onStatus} and
+     * this predicate no longer recognises it either, because it can no longer see a status. Compose
+     * rather than replace: {@code IdemClientAutoConfiguration.isRetryable(t) || myPredicate.test(t)}.
      */
     public static boolean isRetryable(Throwable error) {
-        if (error instanceof WebClientResponseException responseException) {
-            HttpStatusCode status = responseException.getStatusCode();
+        if (error instanceof WebClientResponseException response) {
+            HttpStatusCode status = response.getStatusCode();
             return status.is5xxServerError() || status.value() == 429;
         }
-        return true;
+        return error instanceof WebClientRequestException // reactor-netty wraps transport failures here
+                || error instanceof IOException           // other connectors, and ClosedChannelException
+                || error instanceof TimeoutException;     // per-attempt timeout: the outcome is unknown
     }
 
     private static void validate(IdempotencyProperties properties) {
