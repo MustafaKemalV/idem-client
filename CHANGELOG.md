@@ -4,7 +4,7 @@ Notable changes to idem-client. The format follows [Keep a Changelog](https://ke
 and versions follow [semantic versioning](https://semver.org/), with the compatibility rules stated
 in the [README](README.md#compatibility).
 
-## [0.1.0] - unreleased
+## [0.1.0] - 2026-09-10
 
 First release. Caller-side idempotency for outbound Spring WebFlux calls: a stable `Idempotency-Key`
 that survives a reactive retry, so an idempotent downstream does not double-process a retried request.

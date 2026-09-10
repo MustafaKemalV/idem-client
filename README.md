@@ -1,6 +1,7 @@
 # idem-client
 
 [![CI](https://github.com/MustafaKemalV/idem-client/actions/workflows/ci.yml/badge.svg)](https://github.com/MustafaKemalV/idem-client/actions/workflows/ci.yml)
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.mustafakemalv/idem-client-spring-boot-starter)](https://central.sonatype.com/artifact/io.github.mustafakemalv/idem-client-spring-boot-starter)
 
 Caller-side idempotency for outbound HTTP in Spring WebFlux. `idem-client` attaches a stable
 `Idempotency-Key` to your outgoing requests and keeps the same key across a reactive retry, so an
@@ -40,19 +41,15 @@ thread-hop.
 
 ## Installation
 
-Not yet published to Maven Central. Build and install it into your local Maven repository:
-
-    git clone https://github.com/MustafaKemalV/idem-client.git
-    cd idem-client
-    mvn install
-
-Then add the dependency:
-
     <dependency>
         <groupId>io.github.mustafakemalv</groupId>
         <artifactId>idem-client-spring-boot-starter</artifactId>
-        <version>0.1.0-SNAPSHOT</version>
+        <version>0.1.0</version>
     </dependency>
+
+Gradle:
+
+    implementation("io.github.mustafakemalv:idem-client-spring-boot-starter:0.1.0")
 
 ## Usage
 
