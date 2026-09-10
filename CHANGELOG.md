@@ -23,18 +23,21 @@ that survives a reactive retry, so an idempotent downstream does not double-proc
   for retries that must survive a restart or a queue replay. `hmac` adds a secret where the key must
   also be unguessable.
 - `KeyFingerprintGuard`: catches the same key reused with a different request, locally, before sending.
-  Stores only a digest, scoped per client, and reports in the log when its LRU starts forgetting.
+  Stores a digest rather than the value you pass, is not scoped by downstream (one key is one logical
+  operation, wherever it goes), and reports in the log when its LRU starts forgetting.
 - `IdempotencyListener`: observability hook. Every event carries the key, which is what makes
-  reconciliation possible after an ambiguous failure.
+  reconciliation possible after an ambiguous failure. `onFailed` covers cancellation too, since a
+  cancelled subscription can leave a request in flight that nothing will ever report on.
 - `IdempotencyStore`: an SPI shipped as a design preview, deliberately not wired into the execution
   path. Not part of the public API surface for compatibility purposes.
 - A per-attempt timeout, so one slow attempt cannot hold the whole operation.
 
 ### Behaviour worth knowing
 
-- Retries are an allow-list of transient failures: 5xx, 429, transport failures, the per-attempt
-  timeout, and a connection that dies mid-response after the status line arrived. Nothing else, which
-  includes errors raised on the caller's own side of the exchange.
+- Retries are an allow-list of transient failures: 5xx, the four 4xx codes the specs call retryable
+  (408, 421, 425, 429), transport failures, the per-attempt timeout, and a connection that dies
+  mid-response after the status line arrived. Nothing else, which includes errors raised on the
+  caller's own side of the exchange.
 - The key is minted per subscription. A retry stacked *above* `execute(...)` therefore mints a new key
   per attempt; see [Bring your own retry, carefully](README.md#bring-your-own-retry-carefully).
 - One `execute(...)` is one logical operation. Two different requests inside one call share a key, and
