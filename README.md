@@ -27,7 +27,9 @@ thread-hop.
 - **Bring your own key or scheme:** pass an explicit key, or plug in your own `IdempotencyKeyGenerator`.
 - **Footgun-free wrapper:** `IdempotentWebClient` attaches the filter for you, so a call cannot
   silently go out without the key.
-- **Transient-only retries:** retries 5xx/429 and transport errors, not deterministic 4xx.
+- **Transient-only retries:** an allow-list, not a deny-list. 5xx, 429 and genuine transport failures
+  are retried, including a connection that dies mid-response; a deterministic 4xx, and anything raised
+  on your own side of the exchange, are not.
 - **Spring Boot starter:** auto-configured beans, tunable via `idem-client.*` properties.
 - **Reactive-first:** built on `WebClient` and Project Reactor.
 
@@ -119,12 +121,32 @@ through the `IdempotentExecutor`:
 
 ## Retry behavior
 
-The auto-configured `IdempotentExecutor` retries transient failures only (HTTP 5xx and 429, and
-transport errors such as a connection reset or timeout), up to `max-attempts`, with exponential
-backoff and jitter capped at `max-backoff`. Deterministic 4xx errors are not retried. When retries
-are exhausted the original error is propagated (not wrapped in a `RetryExhaustedException`). To change
-any of this, define your own `IdempotentExecutor` (or `Retry`) bean; every auto-configured bean backs
-off when you provide your own.
+The auto-configured `IdempotentExecutor` retries transient failures only, up to `max-attempts`, with
+exponential backoff and jitter capped at `max-backoff`. What counts as transient is an **allow-list**:
+
+| Retried | Not retried |
+| --- | --- |
+| HTTP 5xx and HTTP 429 | Deterministic 4xx (400, 401, 403, 404, 422, ...) |
+| Transport failures: connection reset, premature close, DNS and TLS failures (`WebClientRequestException`, `IOException`) | Anything raised on your own side of the exchange: a `NullPointerException` in your `map`, a decoding failure, a cancelled subscription |
+| The per-attempt timeout (`TimeoutException`) | |
+| A connection that dies **mid-response**, after the status line arrived | |
+
+That last row is the case this library is built for, and it is the easiest one to miss. Once the
+status has been read, a transport failure while reading the *body* is reported as a
+`WebClientResponseException` carrying the response status (typically 200) with an `IOException` cause.
+The request was dispatched, the downstream may well have processed it, and you never learned the
+outcome. Retrying it is safe only because the key is stable.
+
+An allow-list has a cost, and it is worth stating: if you map a 5xx to your own exception type with
+`onStatus`, the predicate can no longer see a status and will not retry it either. Compose rather than
+replace:
+
+    Retry retry = Retry.backoff(3, Duration.ofMillis(100))
+            .filter(t -> IdemClientAutoConfiguration.isRetryable(t) || t instanceof MyRetryableException);
+
+When retries are exhausted the original error is propagated (not wrapped in a `RetryExhaustedException`).
+To change any of this, define your own `IdempotentExecutor` (or `Retry`) bean; every auto-configured
+bean backs off when you provide your own.
 
 Set `per-attempt-timeout` (and your WebClient's `responseTimeout`) to bound a slow downstream: a
 timed-out attempt is retried safely precisely because the key stays stable.
