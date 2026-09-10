@@ -27,6 +27,8 @@ import reactor.util.retry.Retry;
  * {@code idem-client.*} properties, an {@link IdempotencyKeyExchangeFilter} bean, and an
  * {@link IdempotentWebClientFactory}. Backs off entirely when {@code idem-client.enabled=false};
  * every bean is {@link ConditionalOnMissingBean} so any of them can be overridden.
+ *
+ * @since 0.1.0
  */
 @AutoConfiguration
 @ConditionalOnClass(WebClient.class)

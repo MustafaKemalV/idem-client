@@ -14,6 +14,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * replaced with its own. It uses no bean-validation API on purpose: this library ships no validator,
  * and {@code @Validated} without one on the classpath is a silent no-op, which would be worse than the
  * loud failure it replaced.
+ *
+ * @since 0.1.0
  */
 @ConfigurationProperties(prefix = "idem-client")
 public class IdempotencyProperties implements InitializingBean {

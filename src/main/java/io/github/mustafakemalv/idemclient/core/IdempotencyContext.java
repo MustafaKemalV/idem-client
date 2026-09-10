@@ -12,6 +12,8 @@ import reactor.util.context.ContextView;
  * The Reactor Context is tied to the SUBSCRIPTION, so it survives thread hops and, crucially, a
  * retry: {@code retryWhen} resubscribes the same chain with the same Context, so every attempt sees
  * the same key.
+ *
+ * @since 0.1.0
  */
 public final class IdempotencyContext {
 

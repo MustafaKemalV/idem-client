@@ -7,6 +7,8 @@ import java.util.UUID;
  *
  * <p>A UUIDv4 carries 122 bits of randomness, so collisions are astronomically unlikely, and it
  * leaks no business data, unlike a sequential counter or a content-derived key.
+ *
+ * @since 0.1.0
  */
 public final class UuidIdempotencyKeyGenerator implements IdempotencyKeyGenerator {
 

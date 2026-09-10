@@ -20,6 +20,8 @@ import reactor.util.context.ContextView;
  * If no key is present, or the request already carries the header explicitly, the request passes
  * through unchanged. A key containing control characters (CR, LF, ...) is rejected before the request
  * is sent, so the library does not rely on the transport to reject a header-injection attempt.
+ *
+ * @since 0.1.0
  */
 public final class IdempotencyKeyExchangeFilter implements ExchangeFilterFunction {
 

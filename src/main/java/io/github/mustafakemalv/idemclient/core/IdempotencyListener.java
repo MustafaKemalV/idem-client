@@ -11,6 +11,8 @@ package io.github.mustafakemalv.idemclient.core;
  * never came back. The only way out of that state is to reconcile with the downstream, and to
  * reconcile you need the key that was actually sent. A generated key exists only inside the
  * subscription, so without these callbacks it can never be recovered.
+ *
+ * @since 0.1.0
  */
 public interface IdempotencyListener {
 

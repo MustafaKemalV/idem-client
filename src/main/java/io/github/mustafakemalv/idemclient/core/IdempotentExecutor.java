@@ -22,6 +22,8 @@ import reactor.util.retry.Retry;
  * <p>The key is also validated here, once per logical operation and BEFORE the first attempt is
  * dispatched, rather than per attempt on the way out. A key that cannot be sent is a caller mistake
  * that no retry can fix, so it must fail immediately and only once.
+ *
+ * @since 0.1.0
  */
 public final class IdempotentExecutor {
 

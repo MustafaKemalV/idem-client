@@ -9,6 +9,8 @@ package io.github.mustafakemalv.idemclient.core;
  * a business identifier or be treated by a downstream as a token for retrieving a stored response.
  * The filter already truncates the key in its DEBUG line for the same reason; the full value is
  * available to code that genuinely needs it, from {@link #idempotencyKey()}.
+ *
+ * @since 0.1.0
  */
 public class IdempotencyKeyConflictException extends RuntimeException {
 

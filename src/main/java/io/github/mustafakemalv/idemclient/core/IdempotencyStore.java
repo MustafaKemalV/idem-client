@@ -16,6 +16,8 @@ import java.util.Optional;
  * <p>An implementation must be keyed by a STABLE, caller-supplied or DETERMINISTIC key (see
  * {@link IdempotencyKeys}); the default random-UUID generator mints a new key per subscription, so a
  * store keyed by it would never match a prior attempt.
+ *
+ * @since 0.1.0
  */
 public interface IdempotencyStore {
 

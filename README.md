@@ -327,6 +327,23 @@ store cannot deliver exactly-once (the "committed downstream but not yet persist
 is not closable on the caller side). Shipping the SPI without over-claiming keeps the library honest
 and lean while marking the intended evolution.
 
+## Compatibility
+
+The public API is everything under `io.github.mustafakemalv.idemclient` that is `public`, minus
+anything the javadoc marks as a design preview (today that is `IdempotencyStore`). Every public type
+carries `@since`.
+
+Within a `0.x` line, a patch release never breaks binary compatibility, and a minor release may,
+which is what `0.x` means; each break is listed in the [changelog](CHANGELOG.md) with what to do
+instead. From `1.0.0` onward, binary compatibility is kept within a major version. The jar declares
+`Automatic-Module-Name: io.github.mustafakemalv.idemclient`, so that name is stable even if the
+library adopts a real module descriptor later.
+
+The wire behaviour is part of the contract too, and one piece deserves naming: the encoding behind
+`IdempotencyKeys.of` and `IdempotencyKeys.hmac`. Callers persist those keys and replay them after a
+crash, so changing the encoding would silently invalidate keys already written down. It is pinned by
+tests and will not change within a major version.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

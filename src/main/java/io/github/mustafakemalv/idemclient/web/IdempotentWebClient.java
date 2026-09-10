@@ -20,6 +20,8 @@ import reactor.core.publisher.Mono;
  * <p>All three overloads share one rule: the {@code call} function is applied per SUBSCRIPTION, and
  * anything wrong with the arguments arrives as an {@code onError} signal rather than as an exception
  * thrown out of the method. One method name behaves one way.
+ *
+ * @since 0.1.0
  */
 public final class IdempotentWebClient {
 

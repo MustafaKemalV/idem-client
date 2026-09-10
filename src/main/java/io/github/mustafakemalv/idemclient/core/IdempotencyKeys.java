@@ -23,6 +23,8 @@ import javax.crypto.spec.SecretKeySpec;
  * candidates until one matches. Treat {@link #of} as a way to get a stable, well-formed key, not as a
  * way to keep a value secret, and do not feed it a card number. Where the key must also be
  * unguessable, use {@link #hmac} with a secret.
+ *
+ * @since 0.1.0
  */
 public final class IdempotencyKeys {
 

@@ -22,6 +22,8 @@ import org.apache.commons.logging.LogFactory;
  * verbatim would hold card numbers and names in the heap, and would make the cap a bound on the number
  * of entries rather than on memory. Digesting fixes both: every entry is 64 characters, and nothing
  * sensitive is retained.
+ *
+ * @since 0.1.0
  */
 public final class KeyFingerprintGuard {
 

@@ -12,6 +12,8 @@ package io.github.mustafakemalv.idemclient.core;
  * {@link IdempotentExecutor#MAX_KEY_LENGTH} characters, and printable US-ASCII only (0x21-0x7E).
  * {@link IdempotentExecutor} enforces this on every key it uses, so a generator that breaks the
  * contract fails the operation instead of quietly sending an unusable header.
+ *
+ * @since 0.1.0
  */
 @FunctionalInterface
 public interface IdempotencyKeyGenerator {

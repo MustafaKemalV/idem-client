@@ -12,6 +12,8 @@ import org.springframework.web.reactive.function.client.WebClient;
  *
  * <p>Overloads let you point different providers at different filters (e.g. a custom header name) or
  * executors (e.g. a different retry policy) while keeping the footgun-free wrapper.
+ *
+ * @since 0.1.0
  */
 public final class IdempotentWebClientFactory {
 
