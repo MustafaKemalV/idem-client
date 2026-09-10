@@ -64,6 +64,7 @@
         <dependency>
             <groupId>org.jspecify</groupId>
             <artifactId>jspecify</artifactId>
+            <optional>true</optional>
         </dependency>
         <!-- @ConfigurationProperties IDE metadata -->
         <dependency>
@@ -105,7 +106,9 @@
                 <directory>src/main/resources</directory>
             </resource>
             <!-- Ship the licence inside the jar, not only in the repository: a consumer auditing their
-                 dependencies looks in the artifact. -->
+                 dependencies looks in the artifact. Note that declaring <resources> replaces the
+                 parent's, which filtered application*.yml/properties. This library has none; add the
+                 filtered entry back before ever putting one here. -->
             <resource>
                 <directory>${project.basedir}</directory>
                 <targetPath>META-INF</targetPath>
