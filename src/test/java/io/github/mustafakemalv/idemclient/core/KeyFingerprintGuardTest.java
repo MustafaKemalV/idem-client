@@ -60,6 +60,21 @@ class KeyFingerprintGuardTest {
     }
 
     @Test
+    void theConflictMessageDoesNotCarryTheWholeKey() {
+        // The message ends up in logs and often in an error response; the key may be derived from a
+        // business identifier, or be a token the downstream will honour.
+        guard.check("client-a", "pan-4111111111111111", "fp-A");
+
+        assertThatThrownBy(() -> guard.check("client-a", "pan-4111111111111111", "fp-B"))
+                .isInstanceOf(IdempotencyKeyConflictException.class)
+                .hasMessageContaining("pan-4111...")
+                .hasMessageNotContaining("4111111111111111")
+                .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.type(IdempotencyKeyConflictException.class))
+                .extracting(IdempotencyKeyConflictException::idempotencyKey)
+                .isEqualTo("pan-4111111111111111"); // still reachable for code that needs it
+    }
+
+    @Test
     void forgetsTheLeastRecentlyUsedKeyWhenFull() {
         // Documents the boundary honestly: eviction is protection loss, and the guard says so once in
         // the log rather than pretending it remembers everything.
