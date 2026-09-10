@@ -2,6 +2,8 @@ package io.github.mustafakemalv.idemclient.core;
 
 import java.time.Duration;
 import java.util.Objects;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -109,6 +111,13 @@ public final class IdempotentExecutor {
         });
     }
 
+    /** At most one terminal notification per subscription, whether it ends in an error or a cancel. */
+    private void reportFailure(String key, AtomicLong attempts, AtomicBoolean reported, Throwable error) {
+        if (reported.compareAndSet(false, true)) {
+            listener.onFailed(key, attempts.get(), error);
+        }
+    }
+
     /**
      * A second subscription is legitimate (a deliberate fan-out is two logical operations) and is also
      * the signature of a retry stacked above {@code execute(...)}. The library cannot tell them apart,
@@ -139,6 +148,7 @@ public final class IdempotentExecutor {
         return Mono.defer(() -> {
             // One counter per SUBSCRIPTION, so a fan-out counts its attempts separately.
             AtomicLong attempts = new AtomicLong();
+            AtomicBoolean reported = new AtomicBoolean();
             return attempt
                     .doOnSubscribe(subscription -> {
                         long attempt_ = attempts.incrementAndGet();
@@ -147,7 +157,13 @@ public final class IdempotentExecutor {
                         }
                     })
                     .retryWhen(retrySpec)
-                    .doOnError(error -> listener.onFailed(idempotencyKey, attempts.get(), error))
+                    .doOnError(error -> reportFailure(idempotencyKey, attempts, reported, error))
+                    // Cancellation leaves the same unknown state as a failure: a request may already be
+                    // in flight, and nothing will ever tell us what became of it. A caller who is only
+                    // told about errors would silently lose exactly those operations.
+                    .doOnCancel(() -> reportFailure(idempotencyKey, attempts, reported,
+                            new CancellationException("the operation was cancelled with " + attempts.get()
+                                    + " attempt(s) dispatched; the outcome is unknown")))
                     .contextWrite(ctx -> IdempotencyContext.withKey(ctx, idempotencyKey));
         });
     }

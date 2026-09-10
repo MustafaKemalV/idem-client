@@ -7,6 +7,7 @@ import java.time.Duration;
 import java.util.HashSet;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
@@ -96,6 +97,40 @@ class IdempotentExecutorTest {
         StepVerifier.create(timeoutExecutor.execute(slowThenFast)).expectNext("ok").verifyComplete();
 
         assertThat(attempts.get()).isEqualTo(2); // first timed out, second succeeded
+    }
+
+    @Test
+    void aCancelledOperationIsReportedAsAnUnknownOutcome() {
+        List<Throwable> failures = new CopyOnWriteArrayList<>();
+        IdempotentExecutor exec = new IdempotentExecutor(new UuidIdempotencyKeyGenerator(), Retry.max(0),
+                null, new IdempotencyListener() {
+                    @Override
+                    public void onFailed(String idempotencyKey, long attempts, Throwable error) {
+                        failures.add(error);
+                    }
+                });
+
+        StepVerifier.create(exec.execute(Mono.never())).thenCancel().verify();
+
+        // A cancel leaves a request possibly in flight with nothing to report on it later. Telling the
+        // caller only about errors would silently lose exactly those operations.
+        assertThat(failures).singleElement().isInstanceOf(CancellationException.class);
+    }
+
+    @Test
+    void aSuccessfulOperationReportsNoFailure() {
+        List<Throwable> failures = new CopyOnWriteArrayList<>();
+        IdempotentExecutor exec = new IdempotentExecutor(new UuidIdempotencyKeyGenerator(), Retry.max(0),
+                null, new IdempotencyListener() {
+                    @Override
+                    public void onFailed(String idempotencyKey, long attempts, Throwable error) {
+                        failures.add(error);
+                    }
+                });
+
+        StepVerifier.create(exec.execute(Mono.just("ok"))).expectNext("ok").verifyComplete();
+
+        assertThat(failures).isEmpty(); // a completed Mono must not look like a cancelled one
     }
 
     @Test

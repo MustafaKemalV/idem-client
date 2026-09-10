@@ -32,7 +32,11 @@ public interface IdempotencyListener {
     }
 
     /**
-     * Called when the operation fails for good, after any retries.
+     * Called once when the operation ends without a result, after any retries. That covers a failure
+     * and a CANCELLATION, which reports a {@link java.util.concurrent.CancellationException}: a
+     * cancelled subscription (a request timeout upstream, a disconnected client, an outer
+     * {@code timeout}) can leave a request in flight that nothing will ever report on, so it is the
+     * same unknown state as an exhausted retry and not a quieter one.
      *
      * @param attempts how many attempts were made in total. More than one means the request reached
      *     the wire more than once and the outcome is ambiguous: reconcile on {@code idempotencyKey}
