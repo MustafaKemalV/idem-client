@@ -21,8 +21,11 @@ hs_err_pid*
 # macOS
 .DS_Store
 
-# Claude local session settings
-.claude/
-
 # Local personal guide (not part of the public library)
 GUIDE.tr.md
+
+# local context files, never committed
+.claude/
+CLAUDE.md
+CLAUDE.local.md
+MEMORY.md
