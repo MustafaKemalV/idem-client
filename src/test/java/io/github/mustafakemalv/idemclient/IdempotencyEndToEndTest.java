@@ -27,7 +27,9 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
@@ -201,34 +203,44 @@ class IdempotencyEndToEndTest {
     }
 
     @Test
-    void notifiesListenerOnRetryAndExhaustion(WireMockRuntimeInfo wm) {
+    void everyListenerEventCarriesTheKeyThatWentOnTheWire(WireMockRuntimeInfo wm) {
         stubFor(post(urlEqualTo("/charge")).willReturn(aResponse().withStatus(503)));
-        AtomicInteger retries = new AtomicInteger();
-        AtomicInteger exhausted = new AtomicInteger();
+        List<String> minted = new CopyOnWriteArrayList<>();
+        List<String> retried = new CopyOnWriteArrayList<>();
+        AtomicReference<String> failedKey = new AtomicReference<>();
+        AtomicLong failedAttempts = new AtomicLong();
         IdempotencyListener listener = new IdempotencyListener() {
             @Override
-            public void onRetry(long attempt) {
-                retries.incrementAndGet();
+            public void onKeyMinted(String idempotencyKey) {
+                minted.add(idempotencyKey);
             }
 
             @Override
-            public void onExhausted() {
-                exhausted.incrementAndGet();
+            public void onRetry(String idempotencyKey, long attempt) {
+                retried.add(idempotencyKey);
+            }
+
+            @Override
+            public void onFailed(String idempotencyKey, long attempts, Throwable error) {
+                failedKey.set(idempotencyKey);
+                failedAttempts.set(attempts);
             }
         };
-        Retry spec = Retry.backoff(2, Duration.ofMillis(1))
-                .filter(IdemClientAutoConfiguration::isRetryable)
-                .doBeforeRetry(s -> listener.onRetry(s.totalRetries() + 1))
-                .onRetryExhaustedThrow((sp, sig) -> {
-                    listener.onExhausted();
-                    return sig.failure();
-                });
-        IdempotentExecutor exec = new IdempotentExecutor(new UuidIdempotencyKeyGenerator(), spec);
+        IdempotentExecutor exec = new IdempotentExecutor(new UuidIdempotencyKeyGenerator(),
+                Retry.backoff(2, Duration.ofMillis(1)).filter(IdemClientAutoConfiguration::isRetryable)
+                        .onRetryExhaustedThrow((spec, signal) -> signal.failure()),
+                null, listener);
 
         StepVerifier.create(exec.execute(charge(clientFor(wm)))).expectError().verify();
 
-        assertThat(retries.get()).isEqualTo(2);   // two retries before exhaustion
-        assertThat(exhausted.get()).isEqualTo(1); // exhausted once
+        String key = minted.get(0);
+        assertThat(minted).hasSize(1);                    // one logical operation, one minted key
+        assertThat(retried).containsExactly(key, key);    // two retries, both under that key
+        assertThat(failedKey.get()).isEqualTo(key);
+        assertThat(failedAttempts.get()).isEqualTo(3);    // 1 + 2: the request reached the wire 3 times
+        // The reconciliation guarantee: the key handed to the listener is the key the server saw, so a
+        // caller who logs onFailed can go and ask the downstream what happened to it.
+        assertThat(sentKeys()).containsOnly(key);
     }
 
     @Test

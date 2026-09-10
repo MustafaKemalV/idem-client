@@ -2,6 +2,7 @@ package io.github.mustafakemalv.idemclient.core;
 
 import java.time.Duration;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicLong;
 import reactor.core.publisher.Mono;
 import reactor.util.retry.Retry;
 
@@ -30,9 +31,10 @@ public final class IdempotentExecutor {
     private final IdempotencyKeyGenerator keyGenerator;
     private final Retry retrySpec;
     private final Duration perAttemptTimeout;
+    private final IdempotencyListener listener;
 
     public IdempotentExecutor(IdempotencyKeyGenerator keyGenerator, Retry retrySpec) {
-        this(keyGenerator, retrySpec, null);
+        this(keyGenerator, retrySpec, null, IdempotencyListener.NOOP);
     }
 
     /**
@@ -40,9 +42,21 @@ public final class IdempotentExecutor {
      *     error (retried safely under the stable key). {@code null} means no timeout.
      */
     public IdempotentExecutor(IdempotencyKeyGenerator keyGenerator, Retry retrySpec, Duration perAttemptTimeout) {
+        this(keyGenerator, retrySpec, perAttemptTimeout, IdempotencyListener.NOOP);
+    }
+
+    /**
+     * @param listener notified of the key, of each retry, and of a final failure. The executor owns
+     *     these callbacks rather than the {@link Retry} spec, because only the executor knows the key,
+     *     and a listener wired into the retry spec would report an attempt count with nothing to
+     *     attach it to.
+     */
+    public IdempotentExecutor(IdempotencyKeyGenerator keyGenerator, Retry retrySpec, Duration perAttemptTimeout,
+            IdempotencyListener listener) {
         this.keyGenerator = Objects.requireNonNull(keyGenerator, "keyGenerator");
         this.retrySpec = Objects.requireNonNull(retrySpec, "retrySpec");
         this.perAttemptTimeout = perAttemptTimeout;
+        this.listener = Objects.requireNonNull(listener, "listener");
     }
 
     /**
@@ -61,7 +75,12 @@ public final class IdempotentExecutor {
      */
     public <T> Mono<T> execute(Mono<T> operation) {
         Objects.requireNonNull(operation, "operation");
-        return Mono.defer(() -> execute(keyGenerator.newKey(), operation));
+        return Mono.defer(() -> {
+            String key = keyGenerator.newKey();
+            validateKey(key);
+            listener.onKeyMinted(key);
+            return execute(key, operation);
+        });
     }
 
     /**
@@ -75,9 +94,20 @@ public final class IdempotentExecutor {
         validateKey(idempotencyKey);
         Objects.requireNonNull(operation, "operation");
         Mono<T> attempt = (perAttemptTimeout != null) ? operation.timeout(perAttemptTimeout) : operation;
-        return attempt
-                .retryWhen(retrySpec)
-                .contextWrite(ctx -> IdempotencyContext.withKey(ctx, idempotencyKey));
+        return Mono.defer(() -> {
+            // One counter per SUBSCRIPTION, so a fan-out counts its attempts separately.
+            AtomicLong attempts = new AtomicLong();
+            return attempt
+                    .doOnSubscribe(subscription -> {
+                        long attempt_ = attempts.incrementAndGet();
+                        if (attempt_ > 1) {
+                            listener.onRetry(idempotencyKey, attempt_ - 1);
+                        }
+                    })
+                    .retryWhen(retrySpec)
+                    .doOnError(error -> listener.onFailed(idempotencyKey, attempts.get(), error))
+                    .contextWrite(ctx -> IdempotencyContext.withKey(ctx, idempotencyKey));
+        });
     }
 
     /**

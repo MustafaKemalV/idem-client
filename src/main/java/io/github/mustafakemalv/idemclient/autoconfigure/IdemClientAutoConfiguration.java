@@ -54,12 +54,11 @@ public class IdemClientAutoConfiguration {
         Retry retrySpec = Retry.backoff(properties.getMaxAttempts(), properties.getMinBackoff())
                 .maxBackoff(properties.getMaxBackoff())
                 .filter(IdemClientAutoConfiguration::isRetryable)
-                .doBeforeRetry(signal -> listener.onRetry(signal.totalRetries() + 1))
-                .onRetryExhaustedThrow((spec, signal) -> {
-                    listener.onExhausted();
-                    return signal.failure();
-                });
-        return new IdempotentExecutor(keyGenerator, retrySpec, properties.getPerAttemptTimeout());
+                // Unwrap: the caller gets the original failure, not a RetryExhaustedException wrapping
+                // it. The listener is notified by the executor, which is the only thing that knows the
+                // key the attempts were made under.
+                .onRetryExhaustedThrow((spec, signal) -> signal.failure());
+        return new IdempotentExecutor(keyGenerator, retrySpec, properties.getPerAttemptTimeout(), listener);
     }
 
     @Bean

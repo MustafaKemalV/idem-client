@@ -175,10 +175,30 @@ any metrics or tracing system; it replaces the no-op default:
     @Bean
     IdempotencyListener idempotencyListener(MeterRegistry registry) {
         return new IdempotencyListener() {
-            @Override public void onRetry(long attempt) { registry.counter("idem.retries").increment(); }
-            @Override public void onExhausted() { registry.counter("idem.retries.exhausted").increment(); }
+            @Override public void onKeyMinted(String key) {
+                log.info("idempotency key {} minted", key);
+            }
+            @Override public void onRetry(String key, long attempt) {
+                registry.counter("idem.retries").increment();
+            }
+            @Override public void onFailed(String key, long attempts, Throwable error) {
+                registry.counter("idem.failed").increment();
+                if (attempts > 1) {
+                    log.warn("operation under key {} failed after {} attempts: outcome UNKNOWN, reconcile",
+                            key, attempts);
+                }
+            }
         };
     }
+
+Every callback carries the key, and that is the reason the hook exists. A failure after more than one
+attempt is not a failure you can treat as "nothing happened": the request reached the wire, the
+downstream may have processed it, and the response never came back. The only way out is to ask the
+downstream what happened to that key, so the key has to be recoverable. A generated key lives inside
+one subscription, so `onKeyMinted` is the only place it becomes visible to you.
+
+`onKeyMinted` firing more than once for what you believe is one logical operation is also the
+signature of the footgun described under [Bring your own retry](#bring-your-own-retry-carefully).
 
 The filter also logs at DEBUG when it stamps a key (the key is truncated in the log). For distributed
 tracing, the key lives in the Reactor Context: enable Reactor's automatic context propagation
