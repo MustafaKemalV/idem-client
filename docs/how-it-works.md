@@ -43,7 +43,24 @@ reads the key from the Context (via `deferContextual`) and adds the `Idempotency
 Context has no key, or the request already sets the header explicitly, the request passes through
 unchanged.
 
-## 5. Honest scope
+## 5. The failure this is really for
+
+The obvious case is a downstream that returns 503 and a retry that must not charge twice. The case
+worth understanding is quieter: the request is dispatched, the downstream processes it, and the
+connection dies before the response gets back. Nothing about that failure tells you whether the money
+moved. It is not a failure you can treat as "nothing happened", and it is not a success either.
+
+Spring reports it as a `WebClientResponseException` carrying the *response* status, typically 200,
+with the underlying `IOException` as its cause, which is why a retry predicate that looks only at the
+status decides it is not retryable and gives up on precisely the case a stable key exists to make
+safe. idem-client inspects the cause and retries it under the same key.
+
+When the retries run out, the operation is still in that unknown state, and the only way out is to ask
+the downstream what happened. That needs the key that was actually sent, which is why every
+`IdempotencyListener` callback carries it: a generated key otherwise lives and dies inside one
+subscription.
+
+## 6. Honest scope
 
 idem-client guarantees only that retries of one operation carry a **stable** key. It does not make
 the downstream idempotent; that is the downstream's job. If the downstream ignores the header, there
