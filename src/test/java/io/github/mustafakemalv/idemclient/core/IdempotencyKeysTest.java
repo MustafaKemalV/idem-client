@@ -8,13 +8,13 @@ import org.junit.jupiter.api.Test;
 class IdempotencyKeysTest {
 
     @Test
-    void sameInputsProduceSameKey() {
+    void isDeterministic() {
         assertThat(IdempotencyKeys.of("charge", "order-42"))
                 .isEqualTo(IdempotencyKeys.of("charge", "order-42"));
     }
 
     @Test
-    void differentInputsProduceDifferentKeys() {
+    void differentPartsGiveDifferentKeys() {
         assertThat(IdempotencyKeys.of("charge", "order-42"))
                 .isNotEqualTo(IdempotencyKeys.of("charge", "order-43"));
     }
@@ -25,12 +25,35 @@ class IdempotencyKeysTest {
     }
 
     @Test
-    void producesLowercaseHex64() {
-        assertThat(IdempotencyKeys.of("x")).hasSize(64).matches("[0-9a-f]+");
+    void rejectsNoParts() {
+        assertThatThrownBy(IdempotencyKeys::of).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
-    void rejectsEmpty() {
-        assertThatThrownBy(IdempotencyKeys::of).isInstanceOf(IllegalArgumentException.class);
+    void rejectsANullPart() {
+        assertThatThrownBy(() -> IdempotencyKeys.of("charge", null))
+                .isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
+    void theEncodingIsPinned() {
+        // The digest of "6:charge8:order-42". A caller persists these keys and replays them after a
+        // crash, so changing the encoding would silently change every key already written down. If this
+        // test goes red, that is not a test to update, it is a breaking change to think about.
+        assertThat(IdempotencyKeys.of("charge", "order-42"))
+                .isEqualTo("84ee576a40f4e12d5b57f5cb083f0a4b5a9fa085e320dda7bac4bfee7fbec08e");
+    }
+
+    @Test
+    void theLengthPrefixCountsBytesNotCharacters() {
+        // "turkiye" with a u-umlaut is 7 characters but 8 UTF-8 bytes. The prefix has to describe what
+        // actually follows it, or the framing that the collision argument rests on is not framing.
+        assertThat(IdempotencyKeys.of("türkiye"))
+                .isEqualTo("1d213ca9bcd7b431a92916cdf2a735e5f87f3c312e9dd9948e9ade9ccc41f0ce");
+    }
+
+    @Test
+    void alwaysProducesAKeyTheLibraryWillAccept() {
+        assertThat(IdempotencyKeys.of("charge", "order-42")).hasSize(64).matches("[0-9a-f]{64}");
     }
 }

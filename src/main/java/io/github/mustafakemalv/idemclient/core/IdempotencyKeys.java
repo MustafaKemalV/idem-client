@@ -22,6 +22,10 @@ public final class IdempotencyKeys {
      * Returns a deterministic key (SHA-256 hex) derived from the given parts. The same parts always
      * produce the same key; different parts (order preserved) produce different keys.
      *
+     * <p>The encoding is part of the contract, not an implementation detail: each part is written as
+     * its UTF-8 byte length, a colon, then its UTF-8 bytes, and the concatenation is hashed. Changing
+     * it would change every key every caller has already persisted, so it is pinned by a test.
+     *
      * @throws IllegalArgumentException if no parts are given
      * @throws NullPointerException if any part is null
      */
@@ -32,10 +36,13 @@ public final class IdempotencyKeys {
         MessageDigest digest = sha256();
         for (String part : parts) {
             Objects.requireNonNull(part, "part");
-            // length-prefix each part so ["a","bc"] and ["ab","c"] never collide
-            digest.update(Integer.toString(part.length()).getBytes(StandardCharsets.UTF_8));
+            byte[] encoded = part.getBytes(StandardCharsets.UTF_8);
+            // Length-prefix each part so ["a","bc"] and ["ab","c"] never collide. The prefix counts
+            // BYTES, not characters: it has to describe exactly what follows it, and for a non-ASCII
+            // part a character count does not, which leaves the no-collision claim unproven.
+            digest.update(Integer.toString(encoded.length).getBytes(StandardCharsets.US_ASCII));
             digest.update((byte) ':');
-            digest.update(part.getBytes(StandardCharsets.UTF_8));
+            digest.update(encoded);
         }
         return toHex(digest.digest());
     }
