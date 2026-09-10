@@ -151,6 +151,37 @@ bean backs off when you provide your own.
 Set `per-attempt-timeout` (and your WebClient's `responseTimeout`) to bound a slow downstream: a
 timed-out attempt is retried safely precisely because the key stays stable.
 
+### Bring your own retry, carefully
+
+The key is minted per subscription, and that is what makes a fan-out correct: two subscriptions are
+two logical operations and must not share a key. The same rule bites in the other direction if you
+stack your own retry ABOVE `execute(...)`, because every attempt resubscribes and mints a new key:
+
+    // WRONG: four attempts, four DIFFERENT keys. The downstream sees four unrelated operations and,
+    // being perfectly idempotent, charges four times.
+    client.execute(wc -> wc.post().uri("/charge").bodyValue(request)
+                    .retrieve().bodyToMono(Receipt.class))
+            .retryWhen(Retry.backoff(3, Duration.ofMillis(200)));
+
+    // RIGHT: let the executor own the retry, so every attempt is one subscription under one key.
+    client.execute(wc -> wc.post().uri("/charge").bodyValue(request)
+                    .retrieve().bodyToMono(Receipt.class));
+
+    // ALSO RIGHT: supply the key yourself and it survives whoever resubscribes.
+    client.execute(orderId, wc -> wc.post().uri("/charge").bodyValue(request)
+                    .retrieve().bodyToMono(Receipt.class))
+            .retryWhen(Retry.backoff(3, Duration.ofMillis(200)));
+
+The same applies to a Resilience4j `RetryOperator`, a gateway wrapper, or anything else that
+resubscribes. `onKeyMinted` firing repeatedly for one logical operation is the programmatic signal,
+and the library logs a WARN when a single `execute(...)` is subscribed more than once.
+
+This is deliberately not prevented in code. The obvious structural fix, reusing a key already present
+in the Reactor Context, would make a nested `execute(B)` inside `execute(A)` inherit A's key; the
+downstream would deduplicate B as a replay of A, and B's payment would vanish without a trace. A
+visible double charge is bad, a silent lost payment is worse, so the footgun is made loud rather than
+traded for a quieter one.
+
 The default backoff does not read the failing response, so it ignores a `Retry-After` header on 429/503.
 To honor it, override the `IdempotentExecutor` bean with a custom `Retry` that reads the header
 (`IdemClientAutoConfiguration.isRetryable(...)` is public, so you can reuse the transient-only policy):

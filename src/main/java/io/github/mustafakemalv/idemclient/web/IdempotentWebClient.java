@@ -34,6 +34,11 @@ public final class IdempotentWebClient {
     /**
      * Runs the given call through the executor with a freshly generated idempotency key. The
      * {@code WebClient} handed to {@code call} already carries the idempotency filter.
+     *
+     * <p><b>Do not stack your own retry above this call.</b> The key is minted per subscription, so a
+     * retry placed here resubscribes and sends every attempt of one logical operation under a
+     * DIFFERENT key. Use {@link #execute(String, Function)} with your own key if you must own the
+     * retry; see {@link IdempotentExecutor#execute(reactor.core.publisher.Mono)}.
      */
     public <T> Mono<T> execute(Function<WebClient, Mono<T>> call) {
         Objects.requireNonNull(call, "call");

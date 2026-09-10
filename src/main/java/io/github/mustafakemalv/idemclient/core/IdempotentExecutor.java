@@ -3,6 +3,8 @@ package io.github.mustafakemalv.idemclient.core;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import reactor.core.publisher.Mono;
 import reactor.util.retry.Retry;
 
@@ -21,6 +23,8 @@ import reactor.util.retry.Retry;
  * that no retry can fix, so it must fail immediately and only once.
  */
 public final class IdempotentExecutor {
+
+    private static final Log log = LogFactory.getLog(IdempotentExecutor.class);
 
     /**
      * Longest accepted idempotency key. Providers cap the header (Stripe rejects a key over 255
@@ -72,15 +76,49 @@ public final class IdempotentExecutor {
      * <p>Because the key is minted inside the returned {@code Mono}, a key that violates the contract
      * of {@link IdempotencyKeyGenerator} surfaces as an {@code onError} signal, not as a thrown
      * exception.
+     *
+     * <p><b>Do not stack your own retry above this call.</b> A retry resubscribes, a resubscription
+     * mints a fresh key, and every attempt of one logical operation then goes out under a DIFFERENT
+     * key, which is exactly what stops the downstream from deduplicating them:
+     *
+     * <pre>{@code
+     * // WRONG: four attempts, four different keys, four charges from a compliant downstream.
+     * executor.execute(charge).retryWhen(Retry.backoff(3, ofMillis(200)));
+     *
+     * // RIGHT: supply the key, and it survives whoever resubscribes.
+     * executor.execute(orderId, charge).retryWhen(Retry.backoff(3, ofMillis(200)));
+     * }</pre>
+     *
+     * <p>The same applies to a Resilience4j {@code RetryOperator} or any other wrapper that
+     * resubscribes. A WARN is logged when one {@code execute(...)} is subscribed more than once.
      */
     public <T> Mono<T> execute(Mono<T> operation) {
         Objects.requireNonNull(operation, "operation");
+        // Captured OUTSIDE the defer, so it counts subscriptions to THIS assembled Mono.
+        AtomicLong subscriptions = new AtomicLong();
         return Mono.defer(() -> {
             String key = keyGenerator.newKey();
             validateKey(key);
+            warnIfResubscribed(subscriptions.incrementAndGet());
             listener.onKeyMinted(key);
             return execute(key, operation);
         });
+    }
+
+    /**
+     * A second subscription is legitimate (a deliberate fan-out is two logical operations) and is also
+     * the signature of a retry stacked above {@code execute(...)}. The library cannot tell them apart,
+     * so it says both out loud rather than staying silent about the dangerous one.
+     */
+    private static void warnIfResubscribed(long subscriptions) {
+        if (subscriptions > 1 && log.isWarnEnabled()) {
+            log.warn("execute(Mono) has now been subscribed " + subscriptions + " times and has minted "
+                    + subscriptions + " different idempotency keys. If this is a deliberate fan-out, each "
+                    + "subscription is a separate logical operation and this is correct. If it is a retry "
+                    + "stacked ABOVE execute(...), every attempt of ONE operation is going out under a "
+                    + "DIFFERENT key and the downstream cannot deduplicate them: pass an explicit key, or "
+                    + "let the executor own the retry.");
+        }
     }
 
     /**
