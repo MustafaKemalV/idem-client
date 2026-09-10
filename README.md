@@ -88,6 +88,12 @@ executor, so every call sends a stable `Idempotency-Key`:
 - **A new `charge(...)` call:** a new key, a distinct operation to the downstream.
 - **Your own key:** `client.execute("order-42", wc -> ...)` uses the key you supply.
 
+A key you supply is validated before anything is sent: not blank, at most 255 characters, printable
+US-ASCII only. Blank is the one worth calling out, because it is a legal HTTP header value, so
+without the check an empty key would go out as an empty `Idempotency-Key`, be read downstream as no
+key at all, and leave you with no protection and nothing in the log to notice. The same rules apply
+to a key from your own `IdempotencyKeyGenerator`.
+
 For multiple downstreams with different header names or retry policies, pass a provider-specific
 filter or executor: `factory.create(builder, new IdempotencyKeyExchangeFilter("X-Idem"))`.
 
